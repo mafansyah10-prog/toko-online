@@ -25,33 +25,32 @@
             </div>
 
             <!-- Info Pemesan -->
-            @php
-                // Extract email from notes
-                preg_match('/Email: ([^\|]+)/', $order->notes, $emailMatch);
-                $customerEmail = isset($emailMatch[1]) ? trim($emailMatch[1]) : '-';
-            @endphp
             <div class="bg-gradient-to-r from-rose-500 to-purple-600 rounded-2xl shadow-xl p-6 mb-8 text-white">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="flex items-center">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div class="flex items-start">
                         <div class="flex-shrink-0 bg-white/20 rounded-full p-3">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                             </svg>
                         </div>
                         <div class="ml-4">
-                            <p class="text-sm text-white/70">ID Pesanan</p>
-                            <p class="text-xl font-bold">#{{ $order->id }}</p>
+                            <p class="text-sm text-white/70">Penerima</p>
+                            <p class="text-xl font-bold">{{ $order->customer_name }}</p>
+                            <p class="text-sm text-white/80 mt-1">{{ $order->customer_email }}</p>
+                            <p class="text-sm text-white/80">{{ $order->customer_phone }}</p>
                         </div>
                     </div>
-                    <div class="flex items-center">
+                    <div class="flex items-start">
                         <div class="flex-shrink-0 bg-white/20 rounded-full p-3">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
                             </svg>
                         </div>
                         <div class="ml-4">
-                            <p class="text-sm text-white/70">Email Pemesan</p>
-                            <p class="text-xl font-bold">{{ $customerEmail }}</p>
+                            <p class="text-sm text-white/70">Alamat Pengiriman</p>
+                            <p class="text-sm font-medium leading-relaxed">{{ $order->customer_address }}</p>
+                            <p class="text-sm font-bold mt-1">{{ $order->customer_city }}, {{ $order->customer_postal_code }}</p>
                         </div>
                     </div>
                 </div>

@@ -160,6 +160,16 @@
             <span>TOTAL</span>
             <span>Rp {{ number_format($order->grand_total, 0, ',', '.') }}</span>
         </div>
+        @if($order->payment_method === 'cash')
+        <div style="margin-top: 5px;">
+            <span>Tunai</span>
+            <span>Rp {{ number_format($order->received_amount, 0, ',', '.') }}</span>
+        </div>
+        <div>
+            <span>Kembali</span>
+            <span>Rp {{ number_format($order->change_amount, 0, ',', '.') }}</span>
+        </div>
+        @endif
         @if($order->payment_method === 'cash' && request('received_amount'))
              <!-- Optional: Show Change if passed via query param, though usually not stored in DB unless we added it -->
              <!-- Since we don't store changed amount in DB easily (unless we add it), we might skip it or pass it as a query param to the print route -->

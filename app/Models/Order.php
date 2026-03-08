@@ -31,6 +31,11 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function settlement()
+    {
+        return $this->belongsTo(Settlement::class);
+    }
+
     public function getPaymentMethodLabelAttribute()
     {
         return match ($this->payment_method) {

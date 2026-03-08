@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources\Orders\Schemas;
 
-use Filament\Schemas\Schema;
-use Filament\Schemas\Components\Section;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 
 class OrderForm
 {
@@ -16,14 +16,32 @@ class OrderForm
             ->components([
                 Section::make('Informasi Pelanggan')
                     ->schema([
+                        TextInput::make('customer_name')
+                            ->label('Nama Pelanggan')
+                            ->disabled(),
+                        TextInput::make('customer_email')
+                            ->label('Email Pelanggan')
+                            ->disabled(),
+                        TextInput::make('customer_phone')
+                            ->label('Telepon Pelanggan')
+                            ->disabled(),
                         TextInput::make('user_id')
                             ->label('User ID')
                             ->numeric()
                             ->disabled(),
-                        Textarea::make('notes')
-                            ->label('Catatan / Info Pelanggan')
-                            ->rows(3)
+                        Textarea::make('customer_address')
+                            ->label('Alamat Lengkap')
+                            ->rows(2)
                             ->columnSpanFull(),
+                        TextInput::make('customer_city')
+                            ->label('Kota'),
+                        TextInput::make('customer_postal_code')
+                            ->label('Kode Pos'),
+                        Textarea::make('notes')
+                            ->label('Catatan (Log History)')
+                            ->rows(2)
+                            ->columnSpanFull()
+                            ->disabled(),
                     ])
                     ->columns(2),
 
@@ -45,17 +63,22 @@ class OrderForm
                             ->label('Status Pembayaran')
                             ->options([
                                 'pending' => 'Pending',
-                                'paid' => 'Paid',
-                                'failed' => 'Failed',
+                                'waiting_dp' => 'Menunggu DP',
+                                'paid' => 'Lunas',
+                                'failed' => 'Gagal',
                             ])
                             ->default('pending')
                             ->native(false),
                         Select::make('payment_method')
                             ->label('Metode Pembayaran')
                             ->options([
-                                'cod' => 'Cash on Delivery (COD)',
-                                'bank_transfer' => 'Bank Transfer',
+                                'cash' => 'Tunai',
+                                'qris' => 'QRIS',
+                                'transfer' => 'Transfer Bank',
+                                'debit' => 'Kartu Debit',
+                                'bank_transfer' => 'Bank Transfer (Web)',
                                 'e_wallet' => 'E-Wallet',
+                                'cash_on_delivery' => 'COD (Bayar di Tempat)',
                             ])
                             ->native(false),
                     ])

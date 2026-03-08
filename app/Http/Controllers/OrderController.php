@@ -2,15 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\DB;
-
 use App\Mail\OrderConfirmationMail;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class OrderController extends Controller
 {
@@ -21,7 +20,8 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = Order::with('items.product')->findOrFail($id);
+        $order = Order::with(['items.product', 'settlement'])->findOrFail($id);
+
         return view('orders.show', compact('order'));
     }
 
@@ -36,7 +36,7 @@ class OrderController extends Controller
             ->where('is_active', true)
             ->first();
 
-        if (!$voucher) {
+        if (! $voucher) {
             return response()->json(['valid' => false, 'message' => 'Kode voucher tidak valid.']);
         }
 
@@ -62,7 +62,7 @@ class OrderController extends Controller
             'valid' => true,
             'discount_amount' => $discount,
             'code' => $voucher->code,
-            'message' => 'Voucher berhasil digunakan!'
+            'message' => 'Voucher berhasil digunakan!',
         ]);
     }
 
@@ -70,41 +70,51 @@ class OrderController extends Controller
     {
         Log::info('Checkout store called', ['request' => $request->all()]);
 
+        // Honeypot check
+        if ($request->filled('x_honeypot')) {
+            Log::warning('Honeypot hit! Potential spam detected.', ['request' => $request->all()]);
+
+            return redirect()->back()->with('error', 'Pesanan ditolak karena alasan keamanan.');
+        }
+
         $request->validate([
-            'name' => 'required',
-            'email' => 'required|email',
-            'address' => 'required',
-            'city' => 'required',
-            'postal_code' => 'required',
-            'payment_method' => 'required',
+            'name' => 'required|string|max:100',
+            'email' => 'required|email|max:100',
+            'phone' => ['required', 'string', 'regex:/^(\+62|0)[0-9\s-]{8,15}$/'],
+            'address' => 'required|string|max:500',
+            'city' => 'required|string|max:100',
+            'postal_code' => 'required|string|max:10',
+            'payment_method' => 'required|in:cash_on_delivery,bank_transfer,e_wallet',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         $cart = session()->get('cart');
         Log::info('Cart data', ['cart' => $cart]);
 
-        if(!$cart) {
+        if (! $cart) {
             Log::warning('Cart is empty');
+
             return redirect()->route('products.index')->with('error', 'Keranjang kosong!');
         }
 
         // Validate stock availability before processing
-        foreach($cart as $productId => $details) {
+        foreach ($cart as $productId => $details) {
             $product = Product::find($productId);
-            if (!$product) {
-                return redirect()->back()->with('error', 'Produk "' . $details['name'] . '" tidak ditemukan.');
+            if (! $product) {
+                return redirect()->back()->with('error', 'Produk "'.$details['name'].'" tidak ditemukan.');
             }
             if ($product->stock < $details['quantity']) {
-                return redirect()->back()->with('error', 'Stok "' . $product->name . '" tidak mencukupi. Tersedia: ' . $product->stock);
+                return redirect()->back()->with('error', 'Stok "'.$product->name.'" tidak mencukupi. Tersedia: '.$product->stock);
             }
         }
 
         $shipping_amount = 0; // Free shipping
-        
+
         $subtotal = 0;
-        foreach($cart as $id => $details) {
+        foreach ($cart as $id => $details) {
             $subtotal += $details['price'] * $details['quantity'];
         }
-        
+
         // Calculate Discount
         $discount_amount = 0;
         $voucher_code = null;
@@ -113,12 +123,16 @@ class OrderController extends Controller
             $voucher = \App\Models\Voucher::where('code', $request->voucher_code)
                 ->where('is_active', true)
                 ->first();
-            
+
             if ($voucher) {
                 // Secondary validation
                 $isValid = true;
-                if ($voucher->expired_at && $voucher->expired_at->isPast()) $isValid = false;
-                if ($voucher->usage_limit !== null && $voucher->used_count >= $voucher->usage_limit) $isValid = false;
+                if ($voucher->expired_at && $voucher->expired_at->isPast()) {
+                    $isValid = false;
+                }
+                if ($voucher->usage_limit !== null && $voucher->used_count >= $voucher->usage_limit) {
+                    $isValid = false;
+                }
 
                 if ($isValid) {
                     if ($voucher->type === 'fixed') {
@@ -128,37 +142,51 @@ class OrderController extends Controller
                     }
                     $discount_amount = min($discount_amount, $subtotal);
                     $voucher_code = $voucher->code;
-                    
+
                     // Increment usage
                     $voucher->increment('used_count');
                 }
             }
         }
 
-        $total = ($subtotal - $discount_amount) + $shipping_amount; 
+        $total = ($subtotal - $discount_amount) + $shipping_amount;
         Log::info('Calculated total including shipping and discount', ['subtotal' => $subtotal, 'discount' => $discount_amount, 'total' => $total, 'shipping' => $shipping_amount]);
 
         DB::beginTransaction();
 
         try {
+            // Re-validate stock with LockForUpdate to prevent race conditions
+            foreach ($cart as $productId => $details) {
+                $product = Product::lockForUpdate()->find($productId);
+                if (! $product) {
+                    throw new \Exception('Produk "'.$details['name'].'" tidak ditemukan.');
+                }
+                if ($product->stock < $details['quantity']) {
+                    throw new \Exception('Stok "'.$product->name.'" tidak mencukupi. Tersedia: '.$product->stock);
+                }
+            }
+
             $order = Order::create([
                 'user_id' => auth()->id(), // Associated with logged-in user or null for guest
                 'grand_total' => $total,
                 'discount_amount' => $discount_amount,
                 'voucher_code' => $voucher_code,
                 'payment_method' => $request->payment_method,
-                'payment_status' => 'pending', // Default to pending
+                'payment_status' => $request->payment_method === 'cash_on_delivery' ? 'waiting_dp' : 'pending',
                 'status' => 'new',
                 'shipping_amount' => $shipping_amount,
                 'shipping_method' => 'Standard',
-                'notes' => "Name: " . $request->name . " | Email: " . $request->email . " | Phone: " . ($request->phone ?? '-') . " | Address: " . $request->address . ", " . $request->city . " " . $request->postal_code . " | Customer Notes: " . ($request->notes ?? '-'),
+                'notes' => 'Name: '.$request->name.' | Email: '.$request->email.' | Phone: '.($request->phone ?? '-').' | Address: '.$request->address.', '.$request->city.' '.$request->postal_code.' | Customer Notes: '.($request->notes ?? '-'),
                 'customer_name' => $request->name,
                 'customer_email' => $request->email,
                 'customer_phone' => $request->phone,
+                'customer_address' => $request->address,
+                'customer_city' => $request->city,
+                'customer_postal_code' => $request->postal_code,
             ]);
             Log::info('Order created', ['order_id' => $order->id]);
 
-            foreach($cart as $productId => $details) {
+            foreach ($cart as $productId => $details) {
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $productId,
@@ -167,12 +195,10 @@ class OrderController extends Controller
                     'total_amount' => $details['price'] * $details['quantity'],
                 ]);
 
-                // Reduce product stock
+                // Reduce product stock unconditionally since we locked it earlier
                 $product = Product::find($productId);
-                if ($product) {
-                    $product->decrement('stock', $details['quantity']);
-                    Log::info('Stock reduced', ['product_id' => $productId, 'reduced_by' => $details['quantity'], 'new_stock' => $product->fresh()->stock]);
-                }
+                $product->decrement('stock', $details['quantity']);
+                Log::info('Stock reduced', ['product_id' => $productId, 'reduced_by' => $details['quantity'], 'new_stock' => $product->fresh()->stock]);
             }
             Log::info('Order items created and stock reduced for order', ['order_id' => $order->id]);
 
@@ -191,6 +217,7 @@ class OrderController extends Controller
                         Log::error('Failed to send order confirmation email', ['order_id' => $order->id, 'error' => $e->getMessage()]);
                     }
                 }
+
                 return view('checkout.success', compact('order'));
             }
 
@@ -200,7 +227,8 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error creating order', ['error' => $e->getMessage()]);
-            return redirect()->back()->with('error', 'Error creating order: ' . $e->getMessage());
+
+            return redirect()->back()->with('error', 'Pesanan gagal diproses: '.$e->getMessage());
         }
     }
 
@@ -213,21 +241,30 @@ class OrderController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
+            'order_id' => 'nullable|string',
         ]);
 
-        // Search orders by customer email
-        $orders = Order::with('items.product')
-            ->where('customer_email', $request->email)
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $query = Order::with('items.product')
+            ->where('customer_email', $request->email);
+
+        if ($request->order_id) {
+            $query->where('id', $request->order_id);
+        }
+
+        $orders = $query->orderBy('created_at', 'desc')->get();
 
         if ($orders->isEmpty()) {
+            if ($request->order_id) {
+                return back()->with('error', 'Pesanan #'.$request->order_id.' tidak ditemukan untuk email tersebut.');
+            }
+
             return back()->with('error', 'Tidak ada pesanan ditemukan dengan email tersebut.');
         }
 
         // If only one order, show detail directly
         if ($orders->count() === 1) {
             $order = $orders->first();
+
             return view('orders.tracking-result', compact('order'));
         }
 

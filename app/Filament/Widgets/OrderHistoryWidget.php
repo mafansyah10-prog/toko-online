@@ -3,22 +3,22 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Order;
-use Filament\Tables;
-use Filament\Tables\Table;
-use Filament\Tables\Filters\Filter;
-use Filament\Widgets\TableWidget as BaseWidget;
 use Filament\Forms\Components\DatePicker;
+use Filament\Tables;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Table;
+use Filament\Widgets\TableWidget as BaseWidget;
 use Illuminate\Database\Eloquent\Builder;
 
 class OrderHistoryWidget extends BaseWidget
 {
     protected static ?string $heading = 'Riwayat Transaksi';
-    
+
     protected static ?int $sort = 5;
 
     protected static bool $isLazy = false;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table
     {
@@ -29,7 +29,7 @@ class OrderHistoryWidget extends BaseWidget
             ->columns([
                 Tables\Columns\TextColumn::make('id')
                     ->label('ID')
-                    ->formatStateUsing(fn ($state) => '#' . $state)
+                    ->formatStateUsing(fn ($state) => '#'.$state)
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('customer_name')
@@ -39,10 +39,10 @@ class OrderHistoryWidget extends BaseWidget
                 Tables\Columns\TextColumn::make('customer_email')
                     ->label('Email')
                     ->default('-')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(true, true),
                 Tables\Columns\TextColumn::make('grand_total')
                     ->label('Total')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->sortable(),
                 Tables\Columns\TextColumn::make('payment_method')
                     ->label('Metode')
@@ -95,11 +95,12 @@ class OrderHistoryWidget extends BaseWidget
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['from'] ?? null) {
-                            $indicators['from'] = 'Dari: ' . \Carbon\Carbon::parse($data['from'])->format('d M Y');
+                            $indicators['from'] = 'Dari: '.\Carbon\Carbon::parse($data['from'])->format('d M Y');
                         }
                         if ($data['until'] ?? null) {
-                            $indicators['until'] = 'Sampai: ' . \Carbon\Carbon::parse($data['until'])->format('d M Y');
+                            $indicators['until'] = 'Sampai: '.\Carbon\Carbon::parse($data['until'])->format('d M Y');
                         }
+
                         return $indicators;
                     }),
                 Tables\Filters\SelectFilter::make('payment_status')

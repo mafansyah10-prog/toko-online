@@ -1,0 +1,21 @@
+{
+    "name": "Toko Online Premium",
+    "short_name": "TokoOnline",
+    "description": "Premium E-commerce experience for modern lifestyle.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#f43f5e",
+    "icons": [
+        {
+            "src": "https://images.unsplash.com/photo-1591085686350-798c0f993407?ixlib=rb-1.2.1&auto=format&fit=crop&w=192&h=192&q=80",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "https://images.unsplash.com/photo-1591085686350-798c0f993407?ixlib=rb-1.2.1&auto=format&fit=crop&w=512&h=512&q=80",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

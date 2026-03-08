@@ -2,10 +2,9 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\Order;
 use App\Models\OrderItem;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Console\Command;
 
 class TestOrder extends Command
 {
@@ -51,6 +50,6 @@ class TestOrder extends Command
             'unit_amount' => 90000,
         ]);
 
-        $this->info('Test order created successfully with ID: ' . $order->id);
+        $this->info('Test order created successfully with ID: '.$order->id);
     }
 }

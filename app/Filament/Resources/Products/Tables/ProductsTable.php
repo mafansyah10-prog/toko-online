@@ -5,11 +5,11 @@ namespace App\Filament\Resources\Products\Tables;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Tables\Columns\IconColumn;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ImageColumn;
-use Filament\Tables\Table;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 
 class ProductsTable
 {
@@ -21,43 +21,61 @@ class ProductsTable
                     ->label('Image')
                     ->circular()
                     ->stacked()
-                    ->limit(1),
+                    ->limit(1)
+                    ->size(40),
+
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->wrap()
+                    ->weight('bold'),
+
                 TextColumn::make('category.name')
                     ->label('Category')
+                    ->badge()
+                    ->color('gray')
                     ->sortable(),
+
                 TextColumn::make('price')
                     ->money('IDR')
-                    ->sortable(),
+                    ->sortable()
+                    ->alignment('right'),
+
                 TextColumn::make('stock')
                     ->numeric()
-                    ->sortable(),
-                IconColumn::make('is_active')
-                    ->boolean(),
-                IconColumn::make('is_featured')
-                    ->boolean(),
+                    ->sortable()
+                    ->alignment('center')
+                    ->color(fn ($state) => $state <= 5 ? 'danger' : ($state <= 20 ? 'warning' : 'success'))
+                    ->weight('bold'),
+
+                ToggleColumn::make('is_active')
+                    ->label('Active'),
+
+                ToggleColumn::make('is_featured')
+                    ->label('Featured'),
+
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(true, true),
             ])
+            ->deferLoading()
+            ->paginated([50, 100, 200, 500, 'all'])
+            ->defaultPaginationPageOption(50)
+            ->extremePaginationLinks()
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistColumnSearchesInSession()
             ->filters([
                 SelectFilter::make('category')
                     ->relationship('category', 'name'),
-                SelectFilter::make('is_active')
-                    ->label('Active Status')
-                    ->options([
-                        '1' => 'Active',
-                        '0' => 'Inactive',
-                    ]),
-                SelectFilter::make('is_featured')
-                    ->label('Featured Status')
-                    ->options([
-                        '1' => 'Featured',
-                        '0' => 'Not Featured',
-                    ]),
+                \Filament\Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Active Status'),
+                \Filament\Tables\Filters\TernaryFilter::make('is_featured')
+                    ->label('Featured Status'),
+                \Filament\Tables\Filters\Filter::make('low_stock')
+                    ->label('Low Stock')
+                    ->query(fn ($query) => $query->where('stock', '<=', 5)),
             ])
             ->actions([
                 EditAction::make(),

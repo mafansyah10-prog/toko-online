@@ -1,977 +1,962 @@
 <div class="h-screen w-screen overflow-hidden bg-[#0f172a]" 
     wire:poll.keep-alive.10s="checkNewOrders" 
     x-data="{ 
-        paymentModalOpen: false, 
-        successModalOpen: false, 
-        historyModalOpen: false,
-        newOrdersModalOpen: false,
-        orderDetailModalOpen: false, // Added order detail modal state
+        paymentModalOpen: @entangle('paymentModalOpen'), 
+        successModalOpen: @entangle('successModalOpen'), 
+        historyModalOpen: @entangle('historyModalOpen'),
+        newOrdersModalOpen: @entangle('newOrdersModalOpen'),
+        orderDetailModalOpen: @entangle('orderDetailModalOpen'),
+        loginModalOpen: @entangle('loginModalOpen'),
+        isShiftOpen: @entangle('isShiftOpen'),
+        isLocked: @entangle('isLocked'),
+        showSettlementModal: @entangle('showSettlementModal'),
+        showVoucherCatalog: @entangle('showVoucherCatalog'),
+        selectedCategory: @entangle('selectedCategory'),
         orderId: null,
+        receivedAmount: 0,
         changeAmount: 0,
-        paymentMethod: @entangle('paymentMethod')
+        paymentMethod: @entangle('paymentMethod'),
+        localPin: ''
     }"
-    x-on:order-completed.window="successModalOpen = true; orderId = $event.detail.orderId; changeAmount = $event.detail.changeAmount"
+    x-on:order-completed.window="paymentModalOpen = false; successModalOpen = true; const d = Array.isArray($event.detail) ? $event.detail[0] : $event.detail; orderId = d.orderId; receivedAmount = d.receivedAmount; changeAmount = d.changeAmount"
+    x-on:shift-opened.window="loginModalOpen = false; localPin = '';"
     x-on:open-new-orders-modal.window="newOrdersModalOpen = true"
-    x-on:trigger-order-detail.window="$wire.loadOrderDetail($event.detail.orderId)" 
-    x-on:open-order-detail-modal.window="orderDetailModalOpen = true">
+    x-on:trigger-order-detail.window="const d = Array.isArray($event.detail) ? $event.detail[0] : $event.detail; $wire.loadOrderDetail(d.orderId)" 
+    x-on:open-order-detail-modal.window="orderDetailModalOpen = true"
+    x-on:keydown.window="
+        // 1. Check if Login/Lock Modal is active
+        const isLoginActive = loginModalOpen || !isShiftOpen || isLocked;
+        
+        if (isLoginActive) {
+            // Handle numeric input for PIN only if not in an input field
+            if ($event.target.tagName !== 'INPUT') {
+                if ($event.key >= '0' && $event.key <= '9') {
+                    if (localPin.length < 6) localPin += $event.key;
+                }
+                if ($event.key === 'Backspace') {
+                    localPin = '';
+                }
+            }
+            
+            if ($event.key === 'Enter') {
+                const submitBtn = document.getElementById('btn-aktifkan');
+                if (submitBtn) submitBtn.click();
+            }
+            return; // STOP processing other shortcuts if login is active
+        }
+
+        // 2. Prevent shortcuts from triggering if user is pressing Modifiers (Ctrl, Alt, Meta)
+        // This ensures browser shortcuts like Ctrl+F, Ctrl+C, etc. still work
+        if ($event.ctrlKey || $event.altKey || $event.metaKey) {
+            return;
+        }
+
+        if ($event.key.toUpperCase() === 'F') {
+            if ($event.target.tagName !== 'INPUT' && $event.target.tagName !== 'TEXTAREA') {
+                $event.preventDefault();
+                document.getElementById('search-input').focus();
+            }
+        }
+        
+        if ($event.target.tagName !== 'INPUT' && $event.target.tagName !== 'TEXTAREA') {
+            // Category shortcuts (1-9)
+            if ($event.key >= '1' && $event.key <= '9') {
+                const categories = @js($this->categories->pluck('slug'));
+                if (categories[$event.key - 1]) selectedCategory = categories[$event.key - 1];
+            }
+            if ($event.key === '0') selectedCategory = 'all';
+
+            // Cart shortcuts
+            if ($event.key.toUpperCase() === 'C') {
+                if (confirm('Kosongkan keranjang?')) $wire.clearCart();
+            }
+
+            // Payment shortcut
+            if ($event.key === 'Enter') {
+                if (paymentModalOpen) {
+                    const bayarBtn = document.querySelector('button[wire\\:click=\'checkout\']');
+                    if (bayarBtn && !bayarBtn.disabled) bayarBtn.click();
+                } else if (!loginModalOpen && isShiftOpen && $wire.total > 0) {
+                    paymentModalOpen = true;
+                }
+            }
+        }
+
+        if ($event.key === 'Escape') {
+            showSettlementModal = $wire.set('showSettlementModal', false);
+            showVoucherCatalog = $wire.set('showVoucherCatalog', false);
+            orderDetailModalOpen = false;
+            historyModalOpen = false;
+            newOrdersModalOpen = false;
+            paymentModalOpen = false;
+            loginModalOpen = false;
+        }
+    ">
     
     {{-- Audio Effects --}}
     <audio id="beep-sound" src="{{ asset('sounds/beep.mp3') }}" preload="auto"></audio>
     <audio id="cash-sound" src="{{ asset('sounds/cash.mp3') }}" preload="auto"></audio>
 
-    {{-- Main Container (Full Screen, Fixed) --}}
-    <div class="fixed inset-0 pt-0 lg:pt-0 bg-[#0f172a] text-white overflow-hidden z-0 flex flex-col lg:flex-row font-sans antialiased selection:bg-rose-500 selection:text-white">
-
-
+    {{-- Main POS Layout --}}
+    <div class="fixed inset-0 bg-[#0f172a] text-white overflow-hidden z-0 flex flex-col lg:flex-row font-sans antialiased">
         
-        {{-- COLUMN 1: SIDEBAR CATEGORIES (Fixed Left/Top) --}}
-        <div class="w-full lg:w-32 xl:w-40 h-20 lg:h-full flex flex-row lg:flex-col items-center bg-[#1e293b]/50 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-white/5 py-2 lg:py-6 px-4 lg:px-0 space-x-4 lg:space-x-0 lg:space-y-4 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto no-scrollbar z-20 shrink-0">
-            {{-- Back to Dashboard --}}
-            <a href="/admin"
-                class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl bg-white/5 hover:bg-rose-500 hover:shadow-[0_0_20px_rgba(244,63,94,0.4)] border border-white/5 transition-all duration-300 shrink-0">
-                <div class="text-gray-400 group-hover:text-white mb-1 lg:mb-2 transition-colors">
-                    <x-heroicon-o-arrow-left-on-rectangle class="w-6 h-6 lg:w-8 lg:h-8" />
-                </div>
-                <span class="text-[8px] lg:text-[10px] md:text-xs font-bold uppercase tracking-wider text-center leading-tight text-gray-400 group-hover:text-white">
-                    Keluar
-                </span>
+        {{-- COLUMN 1: SIDEBAR (No Logout here) --}}
+        <div class="w-full lg:w-32 xl:w-40 h-20 lg:h-full flex flex-row lg:flex-col items-center bg-[#1e293b]/50 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-white/5 py-2 lg:py-6 px-4 lg:px-0 space-x-4 lg:space-x-0 lg:space-y-4 overflow-x-auto lg:overflow-y-auto no-scrollbar z-20 shrink-0">
+            
+            <a href="/admin" class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all shrink-0">
+                <x-heroicon-o-arrow-left-on-rectangle class="w-6 h-6 lg:w-8 lg:h-8 text-gray-400 group-hover:text-white" />
+                <span class="text-[8px] lg:text-[10px] font-bold uppercase tracking-wider text-gray-400 group-hover:text-white text-center mt-1">Keluar</span>
             </a>
 
-            {{-- History Button --}}
-            <button @click="historyModalOpen = true"
-                class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl bg-white/5 hover:bg-sky-500 hover:shadow-[0_0_20px_rgba(14,165,233,0.4)] border border-white/5 transition-all duration-300 shrink-0">
-                <div class="text-gray-400 group-hover:text-white mb-1 lg:mb-2 transition-colors">
-                    <x-heroicon-o-clock class="w-6 h-6 lg:w-8 lg:h-8" />
-                </div>
-                <span class="text-[8px] lg:text-[10px] md:text-xs font-bold uppercase tracking-wider text-center leading-tight text-gray-400 group-hover:text-white">
-                    Riwayat
-                </span>
+            <button type="button" @click="historyModalOpen = true" class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl bg-white/5 hover:bg-sky-500 transition-all shrink-0">
+                <x-heroicon-o-clock class="w-6 h-6 lg:w-8 lg:h-8 text-gray-400 group-hover:text-white" />
+                <span class="text-[8px] lg:text-[10px] font-bold uppercase tracking-wider text-gray-400 group-hover:text-white text-center mt-1">Riwayat</span>
             </button>
 
-            {{-- New Orders Bell --}}
-            <button @click="newOrdersModalOpen = true"
-                class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl transition-all duration-300 relative overflow-hidden shrink-0
-                {{ $newOrdersCount > 0 ? 'bg-rose-500 hover:bg-rose-600 shadow-[0_0_20px_rgba(244,63,94,0.4)] animate-pulse' : 'bg-white/5 hover:bg-white/10 border border-white/5' }}">
-                <div class="text-white mb-1 lg:mb-2 transition-colors relative">
-                    <x-heroicon-o-bell class="w-6 h-6 lg:w-8 lg:h-8" />
-                    @if($newOrdersCount > 0)
-                        <span class="absolute -top-1 -right-1 bg-white text-rose-600 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                            {{ $newOrdersCount }}
-                        </span>
-                    @endif
-                </div>
-                <span class="text-[8px] lg:text-[10px] md:text-xs font-bold uppercase tracking-wider text-center leading-tight {{ $newOrdersCount > 0 ? 'text-white' : 'text-gray-400 group-hover:text-white' }}">
-                    Pesanan
-                </span>
+            <button type="button" @click="newOrdersModalOpen = true" class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl transition-all relative shrink-0 {{ $newOrdersCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-white/5 border border-white/5' }}">
+                <x-heroicon-o-bell class="w-6 h-6 lg:w-8 lg:h-8 text-white" />
+                <span class="text-[8px] lg:text-[10px] font-bold uppercase tracking-wider text-white text-center mt-1">Order</span>
+                @if($newOrdersCount > 0) <span class="absolute top-1 right-1 bg-white text-rose-600 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{{ $newOrdersCount }}</span> @endif
             </button>
 
-            <button wire:click="$set('selectedCategory', 'all')"
-                class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl transition-all duration-300 relative overflow-hidden shrink-0
-                {{ $this->selectedCategory === 'all' 
-                    ? 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-[0_0_20px_rgba(244,63,94,0.4)] scale-105' 
-                    : 'bg-white/5 hover:bg-white/10 hover:scale-105 border border-white/5' }}">
-                <div class="{{ $this->selectedCategory === 'all' ? 'text-white' : 'text-rose-400 group-hover:text-rose-300' }} mb-1 lg:mb-2">
-                    <x-heroicon-s-squares-2x2 class="w-6 h-6 lg:w-8 lg:h-8" />
-                </div>
-                <span class="text-[8px] lg:text-[10px] md:text-xs font-bold uppercase tracking-wider text-center leading-tight {{ $this->selectedCategory === 'all' ? 'text-white' : 'text-gray-400 group-hover:text-white' }}">
-                    Semua
-                </span>
+            <button type="button" wire:click="openSettlementModal" class="group flex flex-col items-center justify-center p-2 lg:p-3 w-16 h-16 lg:w-24 lg:h-24 rounded-2xl bg-white/5 hover:bg-emerald-500 transition-all shrink-0">
+                <x-heroicon-o-banknotes class="w-6 h-6 lg:w-8 lg:h-8 text-gray-400 group-hover:text-white" />
+                <span class="text-[8px] lg:text-[10px] font-bold uppercase tracking-wider text-gray-400 group-hover:text-white text-center mt-1">Setelmen</span>
             </button>
-            
-            {{-- ... existing categories loop ... --}}
-            @foreach($this->getViewData()['categories'] as $category)
-                <button wire:click="$set('selectedCategory', '{{ $category->slug }}')"
-                    class="group flex flex-col items-center justify-center p-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl transition-all duration-300 relative overflow-hidden shrink-0 shadow-sm
-                    {{ $this->selectedCategory === $category->slug 
-                        ? 'ring-2 ring-rose-500 scale-105' 
-                        : 'border border-white/5 hover:scale-105 hover:border-white/20' }}">
-                    
+
+            <div class="lg:my-2 w-full h-[1px] bg-white/5"></div>
+
+            <button type="button" wire:click="$set('selectedCategory', 'all')" class="group flex flex-col items-center justify-center p-2 w-20 h-20 lg:w-24 lg:h-24 rounded-2xl transition-all {{ $selectedCategory === 'all' ? 'bg-rose-500 shadow-lg' : 'bg-white/5' }}">
+                <x-heroicon-s-squares-2x2 class="w-6 h-6 lg:w-8 lg:h-8 {{ $selectedCategory === 'all' ? 'text-white' : 'text-rose-400' }}" />
+                <span class="text-[8px] lg:text-[10px] font-black uppercase text-white mt-1">Semua</span>
+            </button>
+
+            @foreach($this->categories as $category)
+                <button type="button" wire:click="$set('selectedCategory', '{{ $category->slug }}')" class="group flex flex-col items-center justify-center p-2 w-20 h-20 lg:w-24 lg:h-24 rounded-2xl transition-all relative overflow-hidden shrink-0 {{ $selectedCategory === $category->slug ? 'ring-2 ring-rose-500 scale-105 shadow-xl' : 'bg-white/5' }}">
                     @if($category->image)
-                        <img src="{{ Storage::url($category->image) }}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-                    @else
-                        <div class="absolute inset-0 bg-[#0f172a] group-hover:bg-[#1e293b] transition-colors"></div>
-                        <div class="{{ $this->selectedCategory === $category->slug ? 'text-rose-500' : 'text-gray-400 group-hover:text-rose-400' }} mb-2 relative z-10 p-3 pb-0">
-                             {{-- Placeholder Icons based on ID modulo for variety --}}
-                            @if($category->id % 4 == 0) <x-heroicon-o-gift class="w-8 h-8" />
-                            @elseif($category->id % 4 == 1) <x-heroicon-o-tag class="w-8 h-8" />
-                            @elseif($category->id % 4 == 2) <x-heroicon-o-sparkles class="w-8 h-8" />
-                            @else <x-heroicon-o-shopping-bag class="w-8 h-8" />
-                            @endif
-                        </div>
+                        <img src="{{ Storage::url($category->image) }}" class="absolute inset-0 w-full h-full object-cover opacity-60" />
+                        <div class="absolute inset-0 bg-black/60"></div>
                     @endif
-
-                    <span class="relative z-10 text-[10px] md:text-xs font-bold uppercase tracking-wider text-center leading-tight line-clamp-2 px-1
-                        {{ $this->selectedCategory === $category->slug ? 'text-white' : 'text-gray-300 group-hover:text-white' }}">
-                        {{ $category->name }}
-                    </span>
+                    <span class="relative z-10 text-[10px] font-black uppercase tracking-wider text-white text-center line-clamp-2 px-1">{{ $category->name }}</span>
                 </button>
             @endforeach
         </div>
 
-        {{-- ... existing code ... --}}
-
-    {{-- NEW ORDERS MODAL --}}
-    <div x-show="newOrdersModalOpen" 
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0"
-        x-transition:enter-end="opacity-100"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100"
-        x-transition:leave-end="opacity-0"
-        style="display: none;">
-        
-        <div class="bg-[#1e293b] w-full max-w-4xl h-[80vh] rounded-3xl shadow-2xl overflow-hidden border border-white/10 flex flex-col"
-             @click.away="newOrdersModalOpen = false">
-             
-             {{-- Modal Header --}}
-             <div class="bg-rose-600 px-6 py-4 flex items-center justify-between shrink-0">
-                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                     <x-heroicon-o-bell class="w-6 h-6 text-white" />
-                     Pesanan Baru Masuk
-                     @if($newOrdersCount > 0)
-                        <span class="bg-white text-rose-600 text-xs font-black px-2 py-0.5 rounded-full ml-2">{{ $newOrdersCount }}</span>
-                     @endif
-                 </h3>
-                 <button @click="newOrdersModalOpen = false" class="text-white/80 hover:text-white">
-                     <x-heroicon-o-x-mark class="w-6 h-6" />
-                 </button>
-             </div>
-
-             {{-- Modal Body --}}
-             <div class="p-0 overflow-y-auto custom-scrollbar flex-1 bg-[#0f172a] flex flex-col">
-                 
-                 {{-- Tabs --}}
-                 <div class="flex border-b border-white/10 bg-[#1e293b] sticky top-0 z-10">
-                     <button wire:click="$set('activeTab', 'new')" 
-                         class="flex-1 py-4 text-sm font-bold uppercase tracking-wider transition-all relative {{ $activeTab === 'new' ? 'text-rose-500' : 'text-gray-400 hover:text-gray-200' }}">
-                         Baru
-                         @if($this->newOrdersCount > 0)
-                            <span class="ml-2 bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{{ $this->newOrdersCount }}</span>
-                         @endif
-                         @if($activeTab === 'new') <div class="absolute bottom-0 left-0 w-full h-0.5 bg-rose-500"></div> @endif
-                     </button>
-                     <button wire:click="$set('activeTab', 'processing')" 
-                         class="flex-1 py-4 text-sm font-bold uppercase tracking-wider transition-all relative {{ $activeTab === 'processing' ? 'text-amber-500' : 'text-gray-400 hover:text-gray-200' }}">
-                         Diproses
-                         @if($this->processingOrdersCount > 0)
-                            <span class="ml-2 bg-amber-500 text-black text-[10px] px-1.5 py-0.5 rounded-full">{{ $this->processingOrdersCount }}</span>
-                         @endif
-                         @if($activeTab === 'processing') <div class="absolute bottom-0 left-0 w-full h-0.5 bg-amber-500"></div> @endif
-                     </button>
-                     <button wire:click="$set('activeTab', 'ready')" 
-                         class="flex-1 py-4 text-sm font-bold uppercase tracking-wider transition-all relative {{ $activeTab === 'ready' ? 'text-emerald-500' : 'text-gray-400 hover:text-gray-200' }}">
-                         Siap
-                         @if($this->readyOrdersCount > 0)
-                            <span class="ml-2 bg-emerald-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{{ $this->readyOrdersCount }}</span>
-                         @endif
-                         @if($activeTab === 'ready') <div class="absolute bottom-0 left-0 w-full h-0.5 bg-emerald-500"></div> @endif
-                     </button>
-                 </div>
-
-                 <div class="space-y-4 p-6 flex-1 overflow-y-auto custom-scrollbar">
-                    @forelse($this->ordersByTab as $order)
-                        <div class="bg-[#1e293b] rounded-2xl p-5 border border-white/5 flex flex-col lg:flex-row gap-6 relative overflow-hidden group hover:border-white/20 transition-all">
-                            
-                            {{-- Order Info --}}
-                            <div class="flex-1 space-y-3">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h4 class="text-lg font-bold text-white flex items-center gap-2">
-                                            #{{ $order->id }}
-                                            <span class="text-xs font-normal text-gray-400 bg-white/5 px-2 py-0.5 rounded">{{ $order->created_at->diffForHumans() }}</span>
-                                        </h4>
-                                        <div class="text-sm text-gray-400 mt-1 flex flex-col">
-                                            <span>{{ $order->customer_name }}</span>
-                                            <span class="text-xs opacity-70">{{ $order->customer_phone ?? '-' }}</span>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-2xl font-black text-white">Rp {{ number_format($order->grand_total, 0, ',', '.') }}</div>
-                                        <div class="flex flex-col items-end gap-1">
-                                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ $order->payment_method_label }}</span>
-                                            
-                                            {{-- Payment Status Toggle --}}
-                                            @if($order->payment_status === 'paid')
-                                                <span class="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">LUNAS</span>
-                                            @else
-                                                <button wire:click="processOrder({{ $order->id }}, 'mark_paid')" 
-                                                    class="text-[10px] font-bold bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors cursor-pointer animate-pulse">
-                                                    BELUM LUNAS (Klik utk Lunas)
-                                                </button>
-                                            @endif
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {{-- Ordered Items Summary --}}
-                                <div class="bg-black/20 rounded-xl p-3 text-sm text-gray-300">
-                                    <ul class="list-disc list-inside space-y-1">
-                                        @foreach($order->items->take(3) as $item)
-                                            <li>{{ $item->product ? $item->product->name : 'Produk Terhapus' }} <span class="text-gray-500">x{{ $item->quantity }}</span></li>
-                                        @endforeach
-                                        @if($order->items->count() > 3)
-                                            <li class="list-none text-xs text-gray-500 italic">+ {{ $order->items->count() - 3 }} produk lainnya...</li>
-                                        @endif
-                                    </ul>
-                                </div>
-                                
-                                {{-- Notes --}}
-                                @if($order->notes)
-                                <div class="text-xs text-amber-400/80 italic">
-                                    "{{ Str::limit($order->notes, 100) }}"
-                                </div>
-                                @endif
-                            </div>
-
-                            {{-- Actions Based on Tab --}}
-                            <div class="flex flex-row lg:flex-col gap-2 shrink-0 justify-center min-w-[170px]">
-                                @if($activeTab === 'new')
-                                    <button wire:click="processOrder({{ $order->id }}, 'process')"
-                                        class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-emerald-600/20 transform active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
-                                        <x-heroicon-o-arrow-path class="w-5 h-5" />
-                                        Terima / Proses
-                                    </button>
-                                @elseif($activeTab === 'processing')
-                                    <button wire:click="processOrder({{ $order->id }}, 'ready')"
-                                        class="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-amber-600/20 transform active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
-                                        <x-heroicon-o-check-circle class="w-5 h-5" />
-                                        Pesanan Siap
-                                    </button>
-                                @elseif($activeTab === 'ready')
-                                    <button wire:click="processOrder({{ $order->id }}, 'complete')"
-                                        class="flex-1 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-sky-600/20 transform active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
-                                        <x-heroicon-o-archive-box-arrow-down class="w-5 h-5" />
-                                        Selesai / Diambil
-                                    </button>
-                                @endif
-
-                                <button wire:click="processOrder({{ $order->id }}, 'print')"
-                                    class="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
-                                    <x-heroicon-o-printer class="w-5 h-5" />
-                                    Cetak Struk
-                                </button>
-                            </div>
+        {{-- MAIN COLUMN --}}
+        <div class="flex-1 h-full flex flex-col relative bg-[#0f172a] overflow-hidden">
+            
+            {{-- Header Bar (Primary Actions) --}}
+            <div class="h-16 lg:h-20 shrink-0 px-4 lg:px-6 flex items-center justify-between bg-[#0f172a]/80 backdrop-blur-md border-b border-white/5 sticky top-0 z-30">
+                <div class="flex items-center gap-4 w-full max-w-xl">
+                    <div class="relative w-full">
+                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                            <x-heroicon-m-magnifying-glass class="h-5 w-5 text-gray-500" />
                         </div>
-                    @empty
-                        <div class="flex flex-col items-center justify-center h-64 text-center text-gray-500">
-                            @if($activeTab === 'new')
-                                <x-heroicon-o-check-badge class="w-20 h-20 mb-4 opacity-30 text-emerald-500" />
-                                <p class="text-xl font-bold">Semua Aman!</p>
-                                <p class="text-sm opacity-60">Tidak ada pesanan baru yang menunggu.</p>
-                            @elseif($activeTab === 'processing')
-                                <x-heroicon-o-clock class="w-20 h-20 mb-4 opacity-30 text-amber-500" />
-                                <p class="text-xl font-bold">Dapur Sepi</p>
-                                <p class="text-sm opacity-60">Tidak ada pesanan yang sedang diproses.</p>
-                            @else
-                                <x-heroicon-o-shopping-bag class="w-20 h-20 mb-4 opacity-30 text-sky-500" />
-                                <p class="text-xl font-bold">Siap Saji Kosong</p>
-                                <p class="text-sm opacity-60">Belum ada pesanan yang siap diambil.</p>
-                            @endif
+                        <input wire:model.live.debounce.300ms="search" type="search" id="search-input" class="block w-full pl-12 pr-4 py-3 bg-[#1e293b] border-transparent focus:border-rose-500 focus:ring-rose-500 rounded-2xl text-white placeholder-gray-500" placeholder="Cari produk (Tekan 'F')...">
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    @if(!$isShiftOpen || $isLocked)
+                        <button type="button" wire:click="$set('loginModalOpen', true)" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6 py-2 rounded-xl shadow-lg transition-all transform active:scale-95">
+                            <x-heroicon-s-key class="w-5 h-5" />
+                            <span class="text-xs uppercase tracking-widest">LOGIN POS</span>
+                        </button>
+                    @else
+                        <div class="flex items-center gap-2">
+                            <button type="button" wire:click="lock" class="flex items-center gap-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-500 font-black px-4 py-2 rounded-xl border border-rose-500/30 transition-all transform active:scale-95">
+                                <x-heroicon-s-lock-closed class="w-4 h-4" />
+                                <span class="text-[10px] uppercase tracking-widest">KUNCI</span>
+                            </button>
+                            <button type="button" wire:click="openSettlementModal" class="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white font-black px-4 py-2 rounded-xl shadow-lg transition-all transform active:scale-95">
+                                <x-heroicon-s-banknotes class="w-4 h-4" />
+                                <span class="text-[10px] uppercase tracking-widest">TUTUP SHIFT</span>
+                            </button>
                         </div>
-                    @endforelse
-                 </div>
-             </div>
+                    @endif
+
+                    <div class="hidden xl:flex flex-col items-end border-l border-white/10 pl-4">
+                        <span class="text-xl font-bold text-white tracking-tight" x-data x-text="new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})"></span>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Products Area (With Overlay if not in shift or locked) --}}
+            <div class="flex-1 relative flex flex-col lg:flex-row overflow-hidden">
+                <div class="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
+                    {{-- Protection Overlay --}}
+                    @if(!$isShiftOpen || $isLocked)
+                    <div class="absolute inset-0 z-20 bg-[#0f172a]/40 backdrop-blur-sm flex items-center justify-center">
+                        <div class="bg-black/60 p-8 rounded-[2rem] text-center border border-white/5">
+                            <div class="w-16 h-16 bg-rose-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-500/30">
+                                <x-heroicon-s-lock-closed class="w-8 h-8 text-rose-500" />
+                            </div>
+                            <h3 class="text-xl font-black text-white uppercase tracking-widest">Akses Terbatas</h3>
+                            <p class="text-gray-400 text-xs font-bold mt-2">Silakan LOGIN di bagian atas untuk mulai berjualan.</p>
+                        </div>
+                    </div>
+                    @endif
+
+                    <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 pb-24">
+                        @forelse($this->products as $product)
+                            <button type="button" {!! $isShiftOpen ? 'wire:click="addToCart('.$product->id.')" wire:loading.class="opacity-50 pointer-events-none scale-95" wire:target="addToCart('.$product->id.')"' : '' !!} class="group relative bg-[#1e293b] rounded-3xl overflow-hidden shadow-lg border border-white/5 {{ $isShiftOpen ? 'hover:border-rose-500/50 cursor-pointer active:scale-95' : 'opacity-40 grayscale cursor-not-allowed' }} transition-all flex flex-col h-full text-left">
+                                <div class="aspect-[4/3] w-full bg-[#0f172a] relative overflow-hidden">
+                                    @if($product->images && count($product->images) > 0)
+                                        <img src="{{ asset('storage/' . $product->images[0]) }}" class="w-full h-full object-cover opacity-90 transition-transform duration-500" />
+                                    @else
+                                        <div class="flex items-center justify-center h-full opacity-10"><x-heroicon-o-photo class="w-16 h-16"/></div>
+                                    @endif
+                                    <div class="absolute bottom-0 right-0 bg-rose-600 px-3 py-1.5 rounded-tl-2xl font-black text-white shadow-xl">Rp {{ number_format($product->price, 0, ',', '.') }}</div>
+                                </div>
+                                <div class="p-4 flex-1 flex flex-col justify-center text-center">
+                                    <h3 class="font-bold text-gray-200 group-hover:text-white transition-colors line-clamp-2">{{ $product->name }}</h3>
+                                </div>
+                            </button>
+                        @empty
+                            <div class="col-span-full py-20 text-center text-gray-500 italic">Produk tidak ditemukan</div>
+                        @endforelse
+                    </div>
+                </div>
+
+                {{-- CART PANEL --}}
+                <div class="w-full lg:w-96 bg-[#1e293b] h-auto lg:h-full border-l border-white/5 flex flex-col z-30 shrink-0 relative">
+                    {{-- Cart Protection --}}
+                    @if(!$isShiftOpen || $isLocked)
+                        <div class="absolute inset-0 z-40 bg-[#1e293b]/60 backdrop-blur-sm"></div>
+                    @endif
+
+                    <div class="h-16 lg:h-20 shrink-0 px-6 bg-[#0f172a]/50 flex items-center justify-between border-b border-white/5">
+                        <div class="flex items-center gap-3">
+                            <x-heroicon-m-shopping-bag class="w-6 h-6 text-rose-500" />
+                            <h2 class="font-bold text-white">Keranjang</h2>
+                        </div>
+                        @if(!empty($cart))
+                        <button type="button" wire:click="clearCart" class="text-[10px] font-black text-gray-500 hover:text-rose-500 transition-colors uppercase tracking-widest flex items-center gap-1 group">
+                            <x-heroicon-o-trash class="w-3 h-3 group-hover:animate-bounce" />
+                            Hapus Semua
+                        </button>
+                        @endif
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        @forelse($cart as $id => $item)
+                            <div class="bg-[#0f172a] rounded-2xl p-3 border border-white/5 flex gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <h4 class="text-xs font-bold text-white truncate pr-2">{{ $item['name'] }}</h4>
+                                        <span class="text-xs font-black text-rose-400">Rp {{ number_format($item['price'] * $item['qty'], 0, ',', '.') }}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center bg-[#1e293b] rounded-lg p-1 gap-2">
+                                        <div class="flex-1 flex justify-between items-center px-1">
+                                            <button type="button" wire:loading.attr="disabled" wire:target="updateQty" wire:click="updateQty({{ $id }}, {{ $item['qty'] - 1 }})" class="p-1 text-gray-500 hover:text-white disabled:opacity-50"><x-heroicon-s-minus class="w-3 h-3"/></button>
+                                            <span class="text-xs font-black text-white px-2">{{ $item['qty'] }}</span>
+                                            <button type="button" wire:loading.attr="disabled" wire:target="updateQty" wire:click="updateQty({{ $id }}, {{ $item['qty'] + 1 }})" class="p-1 text-gray-500 hover:text-white disabled:opacity-50"><x-heroicon-s-plus class="w-3 h-3"/></button>
+                                        </div>
+                                        <button type="button" wire:loading.attr="disabled" wire:target="removeFromCart" wire:click="removeFromCart({{ $id }})" class="w-6 h-6 rounded flex items-center justify-center bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50">
+                                            <x-heroicon-o-x-mark class="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="py-20 text-center text-gray-600 italic">Keranjang Kosong</div>
+                        @endforelse
+                    </div>
+
+                    <div class="bg-[#0f172a] p-6 border-t border-white/10">
+                        <div class="flex justify-between items-center text-2xl font-black text-white mb-6">
+                            <span class="text-xs text-gray-500 uppercase tracking-[0.2em]">Total</span>
+                            <span class="text-rose-500">Rp {{ number_format($total, 0, ',', '.') }}</span>
+                        </div>
+                        <button type="button" {!! $isShiftOpen ? '@click="paymentModalOpen = true"' : '' !!} class="w-full bg-gradient-to-r from-rose-600 to-pink-600 text-white font-black py-4 rounded-2xl shadow-[0_10px_30px_rgba(225,29,72,0.3)] hover:shadow-[0_15px_40px_rgba(225,29,72,0.4)] hover:from-rose-500 hover:to-pink-500 transition-all text-lg disabled:opacity-30 disabled:shadow-none active:scale-95 border border-rose-400/20" x-bind:disabled="Object.keys($wire.cart).length === 0 || !$wire.isShiftOpen">BAYAR</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    
-    {{-- Script --}}
-    <script>
-        // ... (existing scripts) ...
-        
-    </script>
-        <div class="flex-1 h-full flex flex-col relative bg-[#0f172a] overflow-hidden">
-             {{-- Top Bar: Search & Status --}}
-             <div class="h-16 lg:h-20 shrink-0 px-4 lg:px-6 flex items-center justify-between bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-30 border-b border-white/5">
-                <div class="flex items-center gap-4 w-full max-w-2xl">
-                    <div class="relative w-full group">
-                        <div class="absolute inset-y-0 left-0 pl-3 lg:pl-4 flex items-center pointer-events-none">
-                            <x-heroicon-m-magnifying-glass class="h-5 w-5 lg:h-6 lg:w-6 text-gray-500 group-focus-within:text-rose-500 transition-colors" />
-                        </div>
-                        <input wire:model.live.debounce.300ms="search" type="search" id="search-input"
-                            class="block w-full pl-10 lg:pl-12 pr-10 py-2.5 lg:py-3.5 bg-[#1e293b] border-transparent focus:border-rose-500 focus:ring-rose-500 rounded-xl lg:rounded-2xl text-sm lg:text-base text-white placeholder-gray-500 shadow-inner transition-all duration-300"
-                            placeholder="Cari produk (Tekan 'F')...">
-                        
-                        @if($search)
-                            <button wire:click="$set('search', '')" class="absolute inset-y-0 right-10 flex items-center pr-2 text-gray-500 hover:text-white transition-colors">
-                                <x-heroicon-s-x-circle class="w-5 h-5" />
-                            </button>
-                        @endif
 
-                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                            <span class="text-[10px] lg:text-xs font-bold text-gray-500 bg-[#334155] px-1.5 lg:px-2 py-0.5 lg:py-1 rounded">F</span>
-                        </div>
-                    </div>
-                </div>
-                
-                {{-- Date/Time Display (Optional) --}}
-                <div class="hidden xl:flex flex-col items-end text-right">
-                    <span class="text-xl font-bold text-white tracking-tight" x-data x-text="new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})"></span>
-                    <span class="text-xs text-gray-400 uppercase font-medium tracking-wider" x-data x-text="new Date().toLocaleDateString('id-ID', {weekday: 'long', day: 'numeric', month: 'long'})"></span>
-                </div>
-             </div>
+    {{-- MODALS --}}
 
-             {{-- Grid Content --}}
-             <div class="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                {{-- Loading --}}
-                <div wire:loading.flex wire:target="search, selectedCategory" class="absolute inset-0 bg-[#0f172a]/60 backdrop-blur-sm z-40 items-center justify-center">
-                    <div class="flex flex-col items-center animate-pulse">
-                        <div class="w-16 h-16 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <span class="text-rose-400 font-bold tracking-widest uppercase">Memuat...</span>
-                    </div>
-                </div>
-
-                 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 lg:gap-6 pb-24">
-                    @forelse($this->getViewData()['products'] as $product)
-                        <div wire:click="addToCart({{ $product->id }})"
-                            class="group relative bg-[#1e293b] rounded-3xl overflow-hidden shadow-lg border border-white/5 hover:border-rose-500/50 hover:shadow-rose-500/20 active:scale-95 transition-all duration-300 cursor-pointer h-full flex flex-col animate-scaleIn">
-                            
-                            {{-- Image Area --}}
-                            <div class="aspect-[4/3] w-full bg-[#0f172a] relative overflow-hidden">
-                                @if($product->images && count($product->images) > 0)
-                                    <img src="{{ asset('storage/' . $product->images[0]) }}" 
-                                        class="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-110 transition-transform duration-700 ease-out"
-                                        loading="lazy">
-                                @else
-                                    <div class="flex items-center justify-center h-full text-gray-700">
-                                        <x-heroicon-o-photo class="w-16 h-16 opacity-20" />
-                                    </div>
-                                @endif
-                                
-                                {{-- Stock Floating Badge --}}
-                                <div class="absolute top-3 left-3">
-                                    <span class="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg text-white shadow-lg backdrop-blur-md
-                                        {{ $product->stock > 10 ? 'bg-emerald-500/80' : ($product->stock > 0 ? 'bg-amber-500/80' : 'bg-red-500/80') }}">
-                                        {{ $product->stock }} Item
-                                    </span>
-                                </div>
-                                
-                                {{-- Price Tag Overlay --}}
-                                <div class="absolute bottom-0 right-0 bg-[#0f172a]/90 backdrop-blur px-4 py-2 rounded-tl-2xl border-t border-l border-white/10">
-                                    <span class="text-rose-400 font-black text-lg">
-                                        Rp {{ number_format($product->price, 0, ',', '.') }}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {{-- Footer Info --}}
-                            <div class="p-4 flex-1 flex flex-col justify-center">
-                                <h3 class="font-bold text-gray-200 text-sm md:text-base leading-snug line-clamp-2 group-hover:text-white transition-colors text-center">
-                                    {{ $product->name }}
-                                </h3>
-                            </div>
-                        </div>
-                    @empty
-                         <div class="col-span-full flex flex-col items-center justify-center h-80 text-gray-500">
-                            <x-heroicon-o-face-frown class="w-20 h-20 mb-4 opacity-30" />
-                            <p class="text-xl font-bold">Tidak ada produk ditemukan</p>
-                            <p class="text-sm opacity-60">Coba kata kunci lain</p>
-                        </div>
-                    @endforelse
-
-                     <div class="col-span-full py-8 flex justify-center">
-                        <div x-intersect="$wire.loadMoreProducts()" class="flex flex-col items-center gap-2">
-                             <div wire:loading wire:target="loadMoreProducts">
-                                <svg class="animate-spin h-8 w-8 text-rose-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                             </div>
-                             @if($this->getViewData()['products']->hasMorePages())
-                                 <span wire:loading wire:target="loadMoreProducts" class="text-gray-400 text-sm font-medium animate-pulse">Memuat produk lainnya...</span>
-                             @else
-                                 <span class="text-gray-500 text-sm">Semua produk telah ditampilkan.</span>
-                             @endif
-                        </div>
-                    </div>
-                </div>
-             </div>
-        </div>
-
-        {{-- COLUMN 3: CART PANEL (Fixed Right / Stacked Bottom) --}}
-        <div class="w-full lg:w-96 2xl:w-[450px] bg-[#1e293b] h-auto lg:h-full shadow-2xl border-t lg:border-t-0 lg:border-l border-white/10 flex flex-col z-30 shrink-0" 
-            x-data="{ open: false }">
-            
-            {{-- Cart Header (Always Visible) --}}
-            <div class="h-14 lg:h-20 shrink-0 px-4 lg:px-6 bg-[#0f172a]/50 flex items-center justify-between border-b border-white/5 cursor-pointer lg:cursor-default"
-                @click="open = !open">
+    {{-- PAYMENT MODAL (BAYAR) --}}
+    <div x-show="paymentModalOpen" class="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-2xl rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col max-h-[90vh]" @click.away="if(!showVoucherCatalog) paymentModalOpen = false">
+            <div class="p-6 flex justify-between items-center bg-[#0f172a] border-b border-white/5 rounded-t-[2rem] shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 lg:w-10 lg:h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-lg shadow-rose-500/20">
-                        <x-heroicon-m-shopping-bag class="w-4 h-4 lg:w-6 lg:h-6 text-white" />
+                    <div class="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center border border-rose-500/20">
+                        <x-heroicon-o-credit-card class="w-5 h-5 text-rose-500" />
                     </div>
                     <div>
-                        <h2 class="font-bold text-base lg:text-lg text-white leading-none">Keranjang</h2>
-                        <span class="text-[10px] lg:text-xs text-rose-400 font-medium">{{ count($cart) }} Item dipilih</span>
+                        <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Pembayaran</h3>
+                        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Selesaikan pesanan pelanggan</p>
                     </div>
                 </div>
+                <button @click="paymentModalOpen = false" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                    <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                </button>
             </div>
 
-                {{-- Cart Content Wrapper (Overlay on Mobile, Vertical Flex on Desktop) --}}
-            <div class="flex-col lg:flex flex-1 overflow-hidden"
-                 :class="{ 'fixed inset-0 z-50 bg-[#1e293b] flex pt-0': open, 'hidden lg:flex': !open }">
-                
-                {{-- Mobile Overlay Header --}}
-                <div class="lg:hidden h-16 shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-[#0f172a]">
-                    <span class="font-bold text-lg">Detail Pesanan</span>
-                    <button @click="open = false" class="p-2 text-gray-400 hover:text-white bg-white/5 rounded-lg">
-                        <x-heroicon-o-x-mark class="w-6 h-6" />
-                    </button>
+            <div class="flex-1 overflow-y-auto p-6 space-y-6 bg-[#1e293b] custom-scrollbar">
+                {{-- Payment Methods Summary (Horizontal) --}}
+                <div class="flex gap-2 p-1 bg-black/30 rounded-2xl border border-white/5 overflow-x-auto no-scrollbar">
+                    @foreach(['cash' => 'Tunai', 'qris' => 'QRIS', 'transfer' => 'Transfer', 'debit' => 'Debit'] as $method => $label)
+                        <button wire:click="$set('paymentMethod', '{{ $method }}')" class="flex-1 min-w-[100px] py-4 rounded-xl flex flex-col items-center justify-center gap-2 transition-all border {{ $paymentMethod === $method ? 'bg-gradient-to-br from-emerald-600 to-emerald-500 border-emerald-400/30 text-white shadow-lg' : 'bg-[#0f172a] border-white/5 text-gray-500 hover:text-white hover:bg-[#1e293b]' }}">
+                            @if($method === 'cash') <x-heroicon-o-banknotes class="w-6 h-6" />
+                            @elseif($method === 'qris') <x-heroicon-o-qr-code class="w-6 h-6" />
+                            @elseif($method === 'transfer') <x-heroicon-o-arrow-path-rounded-square class="w-6 h-6" />
+                            @else <x-heroicon-o-credit-card class="w-6 h-6" /> @endif
+                            <span class="text-[10px] font-black uppercase tracking-widest">{{ $label }}</span>
+                        </button>
+                    @endforeach
                 </div>
 
-                {{-- Cart List --}}
-                <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                    @forelse($cart as $id => $item)
-                        <div class="group relative bg-[#0f172a] rounded-2xl p-3 border border-white/5 flex gap-4 transition-all hover:border-white/10">
-                            {{-- Image Thumb --}}
-                            <div class="w-16 h-16 rounded-xl bg-[#1e293b] overflow-hidden shrink-0">
-                                @if(isset($item['image']))
-                                    <img src="{{ asset('storage/' . $item['image']) }}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100">
-                                @else
-                                    <div class="w-full h-full flex items-center justify-center"><x-heroicon-o-photo class="w-6 h-6 text-gray-700"/></div>
-                                @endif
-                            </div>
-                            
-                            {{-- Info --}}
-                            <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                                <div class="flex justify-between items-start">
-                                    <h4 class="text-sm font-bold text-gray-200 truncate pr-2">{{ $item['name'] }}</h4>
-                                    <span class="text-sm font-bold text-white">Rp {{ number_format($item['price'] * $item['qty'], 0, ',', '.') }}</span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {{-- Left Column: Amount Input --}}
+                    <div class="space-y-4">
+                        @if($paymentMethod === 'cash')
+                            <div class="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                                <label class="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-3 block">Uang Diterima (Rp)</label>
+                                <div class="relative">
+                                    <span class="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-500 text-xl">Rp</span>
+                                    <input type="number" x-model="$wire.receivedAmount" class="w-full bg-[#0f172a] border-2 border-emerald-500/20 text-white font-black text-2xl h-16 rounded-xl pl-14 pr-4 focus:border-emerald-500 focus:ring-0 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder-gray-700" placeholder="0">
                                 </div>
-                                <div class="flex justify-between items-end">
-                                    <span class="text-xs text-gray-500">Rp {{ number_format($item['price'], 0, ',', '.') }} / unit</span>
-                                    
-                                    {{-- Qty Control --}}
-                                    <div class="flex items-center bg-[#1e293b] rounded-lg border border-white/5">
-                                        <button wire:click="updateQty({{ $id }}, {{ $item['qty'] - 1 }})" class="p-1 hover:text-rose-400 transition-colors"><x-heroicon-s-minus class="w-4 h-4"/></button>
-                                        <span class="text-xs font-bold w-6 text-center text-white">{{ $item['qty'] }}</span>
-                                        <button wire:click="updateQty({{ $id }}, {{ $item['qty'] + 1 }})" class="p-1 hover:text-emerald-400 transition-colors"><x-heroicon-s-plus class="w-4 h-4"/></button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @empty
-                        <div class="flex flex-col items-center justify-center h-64 text-center mt-12 opacity-40">
-                            <x-heroicon-o-shopping-cart class="w-24 h-24 text-gray-600 mb-6" />
-                            <h3 class="text-xl font-bold text-gray-400">Keranjang Kosong</h3>
-                            <p class="text-sm text-gray-600 mt-2">Pilih produk di menu sebelah kiri</p>
-                        </div>
-                    @endforelse
-                </div>
-
-                {{-- Voucher & Footer & Checkout Trigger --}}
-                <div class="bg-[#0f172a] border-t border-white/10 shrink-0">
-                    
-                    {{-- Voucher Input --}}
-                    <div class="px-4 py-3 border-b border-white/5 bg-[#1e293b]/50">
-                         <div class="flex gap-2">
-                             <input wire:model="voucherCode" type="text" placeholder="Kode Voucher" 
-                                class="w-full bg-[#0f172a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 focus:ring-0 placeholder-gray-600">
-                             <button wire:click="applyVoucher" wire:loading.attr="disabled"
-                                class="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors">
-                                 Gunakan
-                             </button>
-                         </div>
-                         @if($discount > 0)
-                            <div class="flex justify-between items-center mt-2 text-emerald-400 text-xs font-bold">
-                                <span>Diskon Voucher</span>
-                                <div class="flex items-center gap-2">
-                                    <span>- Rp {{ number_format($discount, 0, ',', '.') }}</span>
-                                    <button wire:click="removeVoucher" class="text-red-400 hover:text-red-300">
-                                        <x-heroicon-s-x-mark class="w-4 h-4" />
+                                <div class="grid grid-cols-3 gap-2 mt-4">
+                                    @foreach([10000, 20000, 50000, 100000] as $preset)
+                                        <button type="button" x-on:click="$wire.receivedAmount = {{ $preset }}" class="py-3 bg-[#0f172a] hover:bg-emerald-500 hover:text-white text-gray-400 rounded-lg text-xs font-black transition-all border border-white/5 {{ $preset == 100000 ? 'col-span-1' : '' }} active:scale-95">
+                                            {{ number_format($preset/1000, 0) }}K
+                                        </button>
+                                    @endforeach
+                                    <button type="button" x-on:click="$wire.receivedAmount = $wire.total" class="py-3 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-white col-span-2 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all border border-emerald-500/20 active:scale-95">
+                                        Uang Pas
                                     </button>
                                 </div>
                             </div>
-                         @endif
+                        @else
+                            <div class="bg-black/20 p-6 rounded-2xl border border-white/5 flex flex-col justify-center items-center h-full text-center min-h-[200px] shadow-sm">
+                                <div class="w-16 h-16 bg-sky-500/10 rounded-full flex items-center justify-center mb-4 border border-sky-500/20">
+                                    <x-heroicon-o-check-circle class="w-8 h-8 text-sky-500" />
+                                </div>
+                                <h4 class="font-black text-white uppercase tracking-widest text-sm mb-2">Non-Tunai</h4>
+                                <p class="text-[10px] font-bold text-gray-500 tracking-widest uppercase">Pastikan pembayaran berhasil sebelum menyelesaikan pesanan.</p>
+                            </div>
+                        @endif
                     </div>
 
-                    <div class="p-4 lg:p-6">
-                        <div class="space-y-3 mb-6 font-mono text-sm">
-                            <div class="flex justify-between text-gray-500">
-                                <span>Subtotal</span>
-                                <span>Rp {{ number_format($total + $discount, 0, ',', '.') }}</span>
-                            </div>
-                            @if($discount > 0)
-                            <div class="flex justify-between text-emerald-500">
-                                <span>Diskon</span>
-                                <span>- Rp {{ number_format($discount, 0, ',', '.') }}</span>
-                            </div>
+                    {{-- Right Column: Summary --}}
+                    <div class="bg-[#0f172a] p-5 rounded-2xl border border-white/5 flex flex-col justify-between shadow-sm">
+                        <div class="space-y-4">
+                            {{-- Voucher Toggle --}}
+                            @if($voucherCode)
+                                <div class="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl group/voucher transition-all">
+                                    <div class="flex items-center gap-3">
+                                        <div class="bg-emerald-500 p-1.5 rounded-lg shadow-lg">
+                                            <x-heroicon-s-ticket class="w-4 h-4 text-white" />
+                                        </div>
+                                        <div>
+                                            <div class="font-black text-emerald-400 text-xs tracking-widest uppercase">{{ $voucherCode }}</div>
+                                            <div class="text-[8px] text-gray-400 uppercase tracking-widest font-bold mt-0.5">Promo Aktif</div>
+                                        </div>
+                                    </div>
+                                    <button wire:click="removeVoucher" class="text-xs text-rose-500 bg-rose-500/10 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg font-black transition-all">HAPUS</button>
+                                </div>
+                            @else
+                                <button type="button" @click="$wire.set('showVoucherCatalog', true)" class="w-full bg-[#1e293b] hover:bg-white/5 border border-white/5 p-4 rounded-xl flex items-center justify-between group transition-all">
+                                    <div class="flex items-center gap-3">
+                                        <div class="bg-white/5 p-2 rounded-lg border border-white/5 group-hover:bg-emerald-500/20 group-hover:border-emerald-500/30 transition-all">
+                                            <x-heroicon-o-ticket class="w-4 h-4 text-gray-500 group-hover:text-emerald-500" />
+                                        </div>
+                                        <span class="text-xs font-black text-gray-400 uppercase tracking-wider group-hover:text-white transition-colors">Gunakan Promo</span>
+                                    </div>
+                                    <x-heroicon-o-chevron-right class="w-4 h-4 text-gray-600 group-hover:text-white" />
+                                </button>
                             @endif
-                            <div class="flex justify-between text-white text-2xl font-bold border-t border-white/10 pt-4">
-                                <span>Total</span>
-                                <span class="text-rose-500">Rp {{ number_format($total, 0, ',', '.') }}</span>
+
+                            <div class="bg-black/30 w-full h-px"></div>
+
+                            <div class="space-y-2 pt-2">
+                                @php
+                                    $subtotal = array_reduce($cart, function ($carry, $item) { return $carry + ($item['price'] * $item['qty']); }, 0);
+                                @endphp
+                                <div class="flex justify-between items-center text-xs font-bold text-gray-400">
+                                    <span class="uppercase tracking-widest text-[9px]">Subtotal ({{ collect($cart)->sum('qty') }} item)</span>
+                                    <span>Rp {{ number_format($subtotal, 0, ',', '.') }}</span>
+                                </div>
+                                @if($discount > 0)
+                                <div class="flex justify-between items-center text-xs font-black text-emerald-500">
+                                    <span class="uppercase tracking-widest text-[9px]">Diskon Promo</span>
+                                    <span>- Rp {{ number_format($discount, 0, ',', '.') }}</span>
+                                </div>
+                                @endif
+                                <div class="pt-4 mt-2 border-t border-white/5 flex justify-between items-end">
+                                    <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Total Bayar</span>
+                                    <span class="text-2xl font-black text-white tracking-tight">Rp {{ number_format($total, 0, ',', '.') }}</span>
+                                </div>
                             </div>
                         </div>
 
-                        <button @click="paymentModalOpen = true" 
-                            class="w-full bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-rose-600/20 transform active:scale-95 transition-all text-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
-                            {{ empty($cart) ? 'disabled' : '' }}>
-                            <x-heroicon-s-banknotes class="w-6 h-6" />
-                            <span>BAYAR</span>
-                        </button>
+                        @if($paymentMethod === 'cash')
+                            <div class="mt-6 pt-5 border-t border-white/5 flex justify-between items-center">
+                                <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Kembalian</span>
+                                <span class="text-2xl font-black tracking-tight" x-bind:class="$wire.receivedAmount > $wire.total ? 'text-emerald-400' : 'text-gray-600'" x-text="'Rp ' + new Intl.NumberFormat('id-ID').format(Math.max(0, $wire.receivedAmount - $wire.total))">
+                                    Rp {{ number_format(max(0, $change), 0, ',', '.') }}
+                                </span>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>
+
+            <div class="p-6 bg-[#0f172a] border-t border-white/5 flex gap-4 shrink-0 rounded-b-[2rem]">
+                <button type="button" @click="paymentModalOpen = false" class="flex-1 py-4 bg-[#1e293b] hover:bg-white/10 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-all border border-white/5 shadow-sm active:scale-95">BATAL</button>
+                <button type="button" wire:click="checkout" class="flex-[2] py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black rounded-xl text-xs uppercase tracking-[0.2em] transition-all shadow-lg shadow-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 active:scale-95" 
+                    x-bind:disabled="($wire.paymentMethod === 'cash' && $wire.receivedAmount < $wire.total) || Object.keys($wire.cart).length === 0">
+                    <span wire:loading.remove wire:target="checkout">SELESAIKAN PESANAN</span>
+                    <span wire:loading wire:target="checkout" class="flex items-center gap-2">
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        MEMPROSES...
+                    </span>
+                    <x-heroicon-o-arrow-right class="w-4 h-4" wire:loading.remove wire:target="checkout" />
+                </button>
+            </div>
         </div>
     </div>
-
-    {{-- PAYMENT MODAL --}}
-    <div x-show="paymentModalOpen" 
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0"
-        x-transition:enter-end="opacity-100"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100"
-        x-transition:leave-end="opacity-0"
-        style="display: none;">
-        
-        <div class="bg-[#1e293b] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-white/10"
-             @click.away="paymentModalOpen = false">
-             
-             {{-- Modal Header --}}
-             <div class="bg-[#0f172a] px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                 <h3 class="text-xl font-bold text-white">Pembayaran</h3>
-                 <button @click="paymentModalOpen = false" class="text-gray-400 hover:text-white">
-                     <x-heroicon-o-x-mark class="w-6 h-6" />
-                 </button>
-             </div>
-
-             {{-- Modal Body --}}
-             <div class="p-5 space-y-4">
-                 {{-- Total Amount Large Display --}}
-                 <div class="text-center">
-                     <span class="text-gray-400 text-xs uppercase tracking-wider">Total Tagihan</span>
-                     <div class="text-3xl font-black text-white">Rp {{ number_format($total, 0, ',', '.') }}</div>
-                 </div>
-
-                 {{-- Payment Method Selection --}}
-                 <div>
-                     <label class="block text-xs font-bold text-gray-400 mb-1.5">Metode Pembayaran</label>
-                     <div class="grid grid-cols-2 gap-2">
-                         @foreach(['cash' => 'Tunai', 'qris' => 'QRIS', 'transfer' => 'Transfer', 'debit' => 'Debit'] as $key => $label)
-                             <button type="button" x-on:click="paymentMethod = '{{ $key }}'"
-                                 @if($key !== 'cash') x-on:click.debounce.50ms="$wire.set('receivedAmount', {{ $total }})" @else x-on:click.debounce.50ms="$wire.set('receivedAmount', 0)" @endif
-                                 class="py-2 rounded-lg border font-bold text-xs transition-all"
-                                 :class="paymentMethod === '{{ $key }}'
-                                     ? 'bg-rose-500 border-rose-500 text-white shadow-md shadow-rose-500/20' 
-                                     : 'bg-[#0f172a] border-white/10 text-gray-400 hover:text-white hover:bg-white/5'">
-                                 {{ $label }}
-                             </button>
-                         @endforeach
-                     </div>
-                 </div>
-
-                 {{-- Payment Input --}}
-                 <div>
-                     <label class="block text-xs font-bold text-gray-400 mb-1.5">Uang Diterima</label>
-                     <div class="relative">
-                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">Rp</span>
-                        <input type="number" wire:model.live="receivedAmount" id="payment-input-modal"
-                            class="w-full bg-[#0f172a] border-2 border-white/10 rounded-xl py-2 pl-10 pr-4 text-lg font-bold text-white focus:border-rose-500 focus:ring-0 placeholder-gray-600 appearance-none"
-                            placeholder="0" autofocus>
-                    </div>
-                 </div>
-
-                 {{-- Quick Amount Buttons --}}
-                 <div class="grid grid-cols-3 gap-2">
-                    @foreach([20000, 50000, 100000] as $amount)
-                        <button x-on:click="$wire.set('receivedAmount', {{ $amount }})" 
-                            class="bg-[#0f172a] hover:bg-white/10 border border-white/5 rounded-lg py-1.5 text-xs font-bold text-gray-300 transition-all">
-                            {{ number_format($amount/1000, 0) }}k
-                        </button>
-                    @endforeach
-                 </div>
-                 <button x-on:click="$wire.set('receivedAmount', {{ $total }})" 
-                    class="w-full bg-[#0f172a] hover:bg-white/10 border border-white/5 dashed border-rose-500/30 rounded-lg py-1.5 text-xs font-bold text-rose-400 transition-all">
-                    Uang Pas
-                </button>
-
-                 {{-- Change Display --}}
-                 <div class="flex justify-between items-center bg-[#0f172a] p-3 rounded-xl border {{ $change < 0 ? 'border-red-500/30' : 'border-emerald-500/30' }}">
-                    <span class="text-xs font-bold {{ $change < 0 ? 'text-red-400' : 'text-emerald-400' }}">
-                        {{ $change < 0 ? 'Kurang Bayar' : 'Kembalian' }}
-                    </span>
-                    <span class="text-xl font-black {{ $change < 0 ? 'text-red-500' : 'text-emerald-500' }}">
-                        Rp {{ number_format(abs($change), 0, ',', '.') }}
-                    </span>
-                </div>
-             </div>
-
-             {{-- Modal Footer --}}
-             <div class="p-5 pt-0">
-                <button wire:click="checkout" wire:loading.attr="disabled"
-                    class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black py-3 rounded-2xl shadow-lg shadow-emerald-600/20 transform active:scale-95 transition-all text-base flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
-                    {{ empty($cart) || ($receivedAmount < $total) ? 'disabled' : '' }}>
-                    <span wire:loading.remove>PROSES TRANSAKSI</span>
-                    <span wire:loading>MEMPROSES...</span>
-                </button>
-             </div>
-        </div>
-    </div>
-
 
     {{-- SUCCESS MODAL --}}
-    <div x-show="successModalOpen" 
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0 scale-90"
-        x-transition:enter-end="opacity-100 scale-100"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100 scale-100"
-        x-transition:leave-end="opacity-0 scale-90"
-        style="display: none;">
-        
-        <div class="bg-[#1e293b] w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-emerald-500/20 text-center p-8">
-            <div class="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <x-heroicon-s-check class="w-10 h-10 text-emerald-500" />
-            </div>
+    <div x-show="successModalOpen" class="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-90" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-sm rounded-[2rem] shadow-[0_20px_60px_rgba(16,185,129,0.2)] border border-emerald-500/20 overflow-hidden flex flex-col text-center p-8 relative">
             
-            <h2 class="text-3xl font-black text-white mb-2">Transaksi Berhasil!</h2>
-            <p class="text-gray-400 mb-8">Pembayaran telah diterima.</p>
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-sky-500"></div>
 
-            <div class="bg-[#0f172a] rounded-2xl p-6 mb-8 border border-white/5">
-                <span class="text-gray-400 text-sm uppercase tracking-wider block mb-2">Uang Kembalian</span>
-                <span class="text-4xl font-black text-emerald-400 block">
-                    Rp <span x-text="new Intl.NumberFormat('id-ID').format(changeAmount)"></span>
-                </span>
+            <div class="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)] animate-pulse border border-emerald-500/20">
+                <x-heroicon-s-check-circle class="w-14 h-14 text-emerald-500" />
             </div>
 
-            <div class="grid grid-cols-1 gap-4">
-                <button @click="$dispatch('print-receipt', { orderId: orderId })" 
-                    class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2">
-                    <x-heroicon-o-printer class="w-5 h-5" />
-                    Cetak Struk
+            <h2 class="text-2xl font-black text-white uppercase tracking-tight mb-2">Transaksi Sukses!</h2>
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest font-black mb-8" x-text="'ORDER #' + orderId"></p>
+
+            <div class="bg-[#0f172a] rounded-2xl p-5 mb-8 border border-white/5">
+                <div class="flex justify-between items-center mb-4 pb-4 border-b border-white/5">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-gray-500">Diterima</span>
+                    <span class="text-sm font-black text-white" x-text="'Rp ' + new Intl.NumberFormat('id-ID').format(receivedAmount)"></span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500">Kembalian</span>
+                    <span class="text-xl font-black text-emerald-400" x-text="'Rp ' + new Intl.NumberFormat('id-ID').format(changeAmount)"></span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button type="button" @click="$dispatch('print-receipt', { orderId: orderId })" class="py-4 bg-[#0f172a] hover:bg-[#1e293b] border border-white/5 text-gray-400 hover:text-white font-black rounded-xl transition-all flex items-center justify-center gap-2 group text-[10px] uppercase tracking-widest shadow-sm">
+                    <x-heroicon-o-printer class="w-4 h-4 group-hover:scale-110 transition-transform"/> Print
                 </button>
-                
-                <button wire:click="resetCart" @click="successModalOpen = false; paymentModalOpen = false;"
-                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
-                    <x-heroicon-o-plus-circle class="w-5 h-5" />
+                <button type="button" @click="successModalOpen = false; $wire.resetCart()" class="py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl transition-all shadow-lg active:scale-95 text-[10px] uppercase tracking-widest">
                     Pesanan Baru
                 </button>
             </div>
         </div>
     </div>
+    
+    {{-- SOLID COLORED HORIZONTAL PIN PAD --}}
+    <div x-show="loginModalOpen || (!isShiftOpen || isLocked)" 
+         class="fixed inset-0 z-[110] flex items-center justify-center bg-[#0f172a] p-4" 
+         x-cloak 
+         x-transition
+         wire:key="solid-row-login-wrapper">
+        <div class="w-full max-w-6xl flex flex-col items-center gap-16 animate-scaleIn">
+            
+            {{-- PIN Status Section --}}
+            <div class="text-center space-y-6">
+                <div class="flex justify-center gap-6" wire:ignore>
+                    <template x-for="i in 6" :key="i">
+                        <div class="w-4 h-4 rounded-full transition-all duration-300" :class="localPin.length >= i ? 'bg-emerald-500 scale-125 shadow-[0_0_15px_rgba(16,185,129,0.8)]' : 'bg-white/10'"></div>
+                    </template>
+                </div>
+                <h2 class="text-xs font-black text-white/40 uppercase tracking-[0.5em] flex items-center justify-center gap-3">
+                    @if($isShiftOpen && $isLocked)
+                        <x-heroicon-o-lock-closed class="w-4 h-4 text-rose-500" />
+                        SESI TERKUNCI
+                    @else
+                        <x-heroicon-o-shield-check class="w-4 h-4 text-emerald-500" />
+                        VERIFIKASI KASIR
+                    @endif
+                </h2>
+            </div>
 
+            {{-- Horizontal Numeric Pad (Solid Buttons) --}}
+            <div class="flex flex-row items-center justify-center gap-4 lg:gap-8 w-full py-8 bg-white/5 rounded-[3rem] border border-white/5 shadow-2xl" wire:ignore>
+                @foreach([1, 2, 3, 4, 5, 6, 7, 8, 9, 0] as $digit)
+                    <button type="button" 
+                            @click="if(localPin.length < 6) localPin += '{{ $digit }}'" 
+                            class="w-16 h-16 lg:w-20 lg:h-20 rounded-2xl bg-[#1e293b] text-4xl font-bold text-white hover:bg-emerald-600 active:scale-95 transition-all flex items-center justify-center shadow-lg border border-white/5">
+                        {{ $digit }}
+                    </button>
+                @endforeach
+                
+                <div class="w-px h-12 bg-white/10 mx-4"></div>
 
-    {{-- HISTORY MODAL --}}
-    <div x-show="historyModalOpen" 
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0"
-        x-transition:enter-end="opacity-100"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100"
-        x-transition:leave-end="opacity-0"
-        style="display: none;">
-        
-        <div class="bg-[#1e293b] w-full max-w-4xl h-[80vh] rounded-3xl shadow-2xl overflow-hidden border border-white/10 flex flex-col"
-             @click.away="historyModalOpen = false">
-             
-             {{-- Modal Header --}}
-             <div class="bg-[#0f172a] px-6 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
-                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                     <x-heroicon-o-clock class="w-6 h-6 text-sky-500" />
-                     Riwayat Transaksi Terakhir
-                 </h3>
-                 <button @click="historyModalOpen = false" class="text-gray-400 hover:text-white">
-                     <x-heroicon-o-x-mark class="w-6 h-6" />
-                 </button>
-             </div>
+                <button type="button" 
+                        @click="localPin = ''" 
+                        class="w-16 h-16 lg:w-20 lg:h-20 rounded-2xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-all border border-rose-500/20">
+                    <x-heroicon-o-backspace class="w-8 h-8" />
+                </button>
+            </div>
 
-             {{-- Modal Body --}}
-             <div class="p-0 overflow-y-auto custom-scrollbar flex-1">
-                 <table class="w-full text-left border-collapse">
-                     <thead class="bg-[#0f172a] text-gray-400 text-xs uppercase sticky top-0 z-10">
-                         <tr>
-                             <th class="px-6 py-4 font-bold">No. Pesanan</th>
-                             <th class="px-6 py-4 font-bold">Waktu</th>
-                             <th class="px-6 py-4 font-bold">Total</th>
-                             <th class="px-6 py-4 font-bold">Metode</th>
-                             <th class="px-6 py-4 font-bold">Status</th>
-                             <th class="px-6 py-4 font-bold text-right">Aksi</th>
-                         </tr>
-                     </thead>
-                     <tbody class="divide-y divide-white/5 text-sm text-gray-300">
-                         @forelse($this->recentOrders as $order)
-                             <tr class="hover:bg-white/5 transition-colors">
-                                 <td class="px-6 py-4 font-mono text-sky-400">#{{ $order->id }}</td>
-                                 <td class="px-6 py-4">{{ $order->created_at->locale('id')->isoFormat('D MMMM Y, HH:mm') }}</td>
-                                 <td class="px-6 py-4 font-bold text-white">Rp {{ number_format($order->grand_total, 0, ',', '.') }}</td>
-                                 <td class="px-6 py-4">
-                                     @php
-                                        $pmLabels = [
-                                            'cash' => 'Tunai', 
-                                            'qris' => 'QRIS', 
-                                            'transfer' => 'Transfer', 
-                                            'debit' => 'Debit'
-                                        ];
-                                        $pmColors = [
-                                            'cash' => 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-                                            'qris' => 'text-sky-400 bg-sky-500/10 border-sky-500/20',
-                                            'transfer' => 'text-violet-400 bg-violet-500/10 border-violet-500/20',
-                                            'debit' => 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-                                        ];
-                                        $pmKey = $order->payment_method ?? 'cash';
-                                     @endphp
-                                     <span class="px-2 py-1 rounded text-xs font-bold border {{ $pmColors[$pmKey] ?? 'text-gray-400 border-gray-500/20' }}">
-                                         {{ $pmLabels[$pmKey] ?? ucfirst($pmKey) }}
-                                     </span>
-                                 </td>
-                                 <td class="px-6 py-4">
-                                     <span class="px-2 py-1 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
-                                         {{ $order->status }}
-                                     </span>
-                                 </td>
-                                 <td class="px-6 py-4 text-right">
-                                     <button @click="$dispatch('print-receipt', { orderId: {{ $order->id }} })"
-                                         class="inline-flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all text-xs font-bold text-white">
-                                         <x-heroicon-o-printer class="w-4 h-4" />
-                                         Cetak
-                                     </button>
-                                 </td>
-                             </tr>
-                         @empty
-                             <tr>
-                                 <td colspan="5" class="px-6 py-12 text-center text-gray-500">
-                                     Belum ada riwayat transaksi hari ini.
-                                 </td>
-                             </tr>
-                         @endforelse
-                         
-                         @if($this->recentOrders->hasMorePages())
-                             <tr>
-                                 <td colspan="6" class="px-6 py-4 text-center">
-                                     <div x-intersect="$wire.loadMoreRecentOrders()" class="flex justify-center items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wider animate-pulse">
-                                         <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                         Memuat data lainnya...
-                                     </div>
-                                 </td>
-                             </tr>
-                         @endif
-                     </tbody>
-                 </table>
-             </div>
+            <div class="w-full max-w-xl h-40 flex flex-col items-center justify-center gap-6" x-show="localPin.length >= 4" x-cloak>
+                <div class="w-full" x-show="!isShiftOpen">
+                    <div class="w-full flex items-center bg-[#1e293b] rounded-[2rem] p-2 border border-white/5 shadow-2xl animate-fadeIn">
+                        <div class="flex-1 flex items-center pl-6">
+                            <span class="text-emerald-500 font-black text-xl mr-4 select-none">Rp</span>
+                            <input type="number" wire:model="openingCash" placeholder="Ketik Modal Awal..." 
+                                   class="w-full bg-transparent border-none p-0 py-4 text-2xl font-bold text-white focus:ring-0 focus:outline-none placeholder:text-gray-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                        </div>
+                        <button type="button" @click="$wire.set('pin', localPin); $wire.openShift()" id="btn-aktifkan" wire:loading.attr="disabled"
+                                class="px-10 h-16 rounded-[1.5rem] bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-sm tracking-widest uppercase shadow-xl active:scale-95 disabled:opacity-50 shrink-0">
+                            <span wire:loading.remove wire:target="openShift">AKTIFKAN</span>
+                            <span wire:loading wire:target="openShift">PROSES...</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="w-full" x-show="isShiftOpen">
+                    <button type="button" @click="$wire.set('pin', localPin); $wire.openShift()" id="btn-aktifkan-unlock" wire:loading.attr="disabled"
+                            class="w-full h-16 rounded-[1.5rem] bg-rose-600 text-white font-black hover:bg-rose-500 transition-all text-sm tracking-widest uppercase shadow-xl active:scale-95 disabled:opacity-50 animate-fadeIn">
+                        <span wire:loading.remove wire:target="openShift">BUKA KUNCI POS</span>
+                        <span wire:loading wire:target="openShift">MEMPROSES...</span>
+                    </button>
+                </div>
+            </div>
+            <div class="mt-8 flex justify-center opacity-30 hover:opacity-100 transition-opacity">
+                <button type="button" @click="$wire.realLogout()" class="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <x-heroicon-o-power class="w-3 h-3"/> Logout Akun
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    {{-- SETTLEMENT MODAL (TUTUP SHIFT) --}}
+    <div x-show="showSettlementModal" class="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-xl rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5 overflow-hidden flex flex-col max-h-[90vh]" @click.away="$wire.set('showSettlementModal', false)">
+            
+            {{-- Compact Opaque Header --}}
+            <div class="p-5 flex justify-between items-center bg-[#0f172a] border-b border-white/5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
+                        <x-heroicon-o-banknotes class="w-5 h-5 text-emerald-500" />
+                    </div>
+                    <div>
+                        <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Laporan Shift</h3>
+                        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ now()->format('l, d M Y') }}</p>
+                    </div>
+                </div>
+                <button @click="$wire.set('showSettlementModal', false)" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                    <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[#1e293b]">
+                
+                {{-- Compact Opaque Summary Cards --}}
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-[#0f172a] p-4 rounded-2xl border border-white/5 shadow-sm">
+                        <div class="flex items-center gap-2 mb-2">
+                            <x-heroicon-o-presentation-chart-line class="w-3.5 h-3.5 text-emerald-500"/>
+                            <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Penjualan</span>
+                        </div>
+                        <div class="text-xl font-black text-white tracking-tight">Rp {{ number_format($settlementData['total_sales'] ?? 0, 0, ',', '.') }}</div>
+                    </div>
+                    <div class="bg-[#0f172a] p-4 rounded-2xl border border-white/5 shadow-sm">
+                        <div class="flex items-center gap-2 mb-2">
+                            <x-heroicon-o-shopping-cart class="w-3.5 h-3.5 text-sky-500"/>
+                            <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Transaksi</span>
+                        </div>
+                        <div class="text-xl font-black text-white tracking-tight">{{ $settlementData['count'] ?? 0 }} <span class="text-[10px] text-gray-500 font-bold ml-1 uppercase">Order</span></div>
+                    </div>
+                </div>
+
+                {{-- Compact Activity Chart --}}
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center px-1">
+                        <h4 class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Grafik Aktivitas</h4>
+                    </div>
+                    <div class="h-20 bg-black/20 rounded-2xl border border-white/5 flex items-end justify-between px-4 py-2 gap-1 group/chart">
+                        @foreach($settlementData['hourly_trend'] ?? [] as $hour => $percent)
+                            <div class="group relative flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                                <div class="w-full bg-emerald-500/30 rounded-sm transition-all duration-300 group-hover:bg-emerald-500/60" style="height: {{ max($percent, 8) }}%"></div>
+                                <div class="absolute -top-10 left-1/2 -translate-x-1/2 bg-[#0f172a] text-[8px] font-black text-white px-1.5 py-0.5 rounded border border-white/10 shadow-2xl scale-0 group-hover:scale-100 transition-all origin-bottom z-50">{{ $hour }}:00</div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+
+                {{-- Compact Breakdowns Grid --}}
+                <div class="grid grid-cols-2 gap-3">
+                    @foreach(['cash_sales' => ['Tunai', 'bg-emerald-500'], 'qris_sales' => ['QRIS', 'bg-sky-500'], 'transfer_sales' => ['Transfer', 'bg-indigo-500'], 'debit_sales' => ['Debit', 'bg-amber-500']] as $key => $config)
+                        <div class="bg-black/20 p-3 rounded-xl border border-white/5 flex flex-col">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="w-1.5 h-1.5 rounded-full {{ $config[1] }}"></div>
+                                <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">{{ $config[0] }}</span>
+                            </div>
+                            <span class="text-sm font-black text-white">Rp {{ number_format($settlementData[$key] ?? 0, 0, ',', '.') }}</span>
+                        </div>
+                    @endforeach
+                </div>
+
+                {{-- Compact Form Opaque Section --}}
+                <div class="bg-black/30 p-5 rounded-2xl border border-white/5 space-y-5">
+                    <div class="flex items-center gap-2 mb-1">
+                        <x-heroicon-o-currency-dollar class="w-4 h-4 text-emerald-500" />
+                        <h4 class="text-[10px] font-black text-white uppercase tracking-widest">Penutupan Kas</h4>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="relative">
+                            <label class="absolute left-4 top-1.5 text-[8px] font-black text-emerald-500/60 uppercase tracking-widest">Uang Tunai di Laci</label>
+                            <span class="absolute left-4 bottom-3 text-gray-400 font-black text-lg">Rp</span>
+                            <input type="number" wire:model="actualCashAmount" placeholder="0" class="w-full bg-[#0f172a] border border-white/10 rounded-xl pt-6 pb-2.5 pl-11 pr-4 text-xl font-black text-white focus:border-emerald-500/50 transition-all focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                        </div>
+
+                        <div class="relative">
+                            <label class="absolute left-4 top-1.5 text-[8px] font-black text-gray-600 uppercase tracking-widest">Catatan (Opsional)</label>
+                            <textarea wire:model="settlementNotes" placeholder="Tulis catatan..." class="w-full bg-[#0f172a] border border-white/5 rounded-xl pt-6 pb-3 px-4 text-xs font-bold text-white placeholder-gray-800 focus:border-emerald-500/30 transition-all focus:ring-0 min-h-[80px] outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 bg-[#0f172a] border-t border-white/5 flex gap-3">
+                <button wire:click="closeSettlement" class="flex-1 h-12 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3">
+                    <span wire:loading.remove wire:target="closeSettlement">TUTUP SHIFT & CETAK</span>
+                    <div wire:loading wire:target="closeSettlement" class="flex items-center gap-2">
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        MEMPROSES...
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{-- HISTORY MODAL (RIWAYAT TRANSAKSI) --}}
+    {{-- HISTORY MODAL (RIWAYAT TRANSAKSI) --}}
+    <div x-show="historyModalOpen" class="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-6xl h-[90vh] rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5 overflow-hidden flex flex-col" @click.away="historyModalOpen = false">
+            
+            <div class="p-5 flex justify-between items-center bg-[#0f172a] border-b border-white/5 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-sky-500/10 rounded-xl flex items-center justify-center border border-sky-500/20">
+                        <x-heroicon-o-clock class="w-5 h-5 text-sky-500" />
+                    </div>
+                    <div>
+                        <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Riwayat</h3>
+                        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Transaksi hari ini</p>
+                    </div>
+                </div>
+                <button @click="historyModalOpen = false" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                    <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 custom-scrollbar bg-[#0f172a]">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    @forelse($this->recent_orders as $order)
+                        <div class="bg-gradient-to-br from-indigo-800 to-indigo-900 p-4 rounded-2xl border border-indigo-700 hover:border-sky-400 transition-all flex flex-col justify-between group shadow-md hover:shadow-lg h-[140px]">
+                            
+                            <div>
+                                <div class="flex justify-between items-start mb-3">
+                                    <div class="flex flex-col">
+                                        <div class="text-[14px] font-black text-white tracking-tight leading-none mb-1.5">#{{ $order->id }}</div>
+                                        <span class="text-[9px] font-bold text-indigo-300 uppercase tracking-widest">{{ $order->created_at->format('d M \• H:i') }}</span>
+                                    </div>
+                                    <div class="text-right flex flex-col items-end">
+                                        <div class="text-[13px] font-black text-sky-300 tracking-tight leading-none mb-1.5">Rp{{ number_format($order->grand_total, 0, ',', '.') }}</div>
+                                        <div class="px-2 py-0.5 bg-indigo-950 rounded text-[8px] font-black text-sky-300 uppercase tracking-widest border border-indigo-800">{{ strtoupper($order->payment_method) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-2 w-full mt-auto">
+                                <button @click="$dispatch('print-receipt', { orderId: {{ $order->id }} })" class="flex-1 h-8 bg-sky-500 hover:bg-sky-400 text-white font-black rounded-xl text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 border border-sky-400">
+                                    <x-heroicon-o-printer class="w-4 h-4" /> <span class="hidden sm:inline">CETAK</span>
+                                </button>
+                                <button wire:click="loadOrderDetail({{ $order->id }})" class="flex-1 h-8 bg-indigo-700 hover:bg-indigo-600 text-white font-black rounded-xl text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1 border border-indigo-500 shadow-sm active:scale-95">
+                                    <x-heroicon-o-eye class="w-4 h-4" /> <span class="hidden sm:inline">DETAIL</span>
+                                </button>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="col-span-full py-24 text-center flex flex-col items-center gap-4 text-gray-700">
+                            <x-heroicon-o-inbox class="w-10 h-10 opacity-10" />
+                            <p class="font-black uppercase tracking-widest text-[10px]">Belum ada transaksi</p>
+                        </div>
+                    @endforelse
+                </div>
+
+                @if($this->recent_orders->hasMorePages())
+                    <div class="mt-8 flex justify-center">
+                        <button wire:click="loadMoreRecentOrders" class="px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-sky-500 transition-all shadow-sm">
+                            MUAT LEBIH BANYAK
+                        </button>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    {{-- NEW ORDERS MODAL (MANAJEMEN ORDER ONLINE) --}}
+    {{-- ORDER MANAGEMENT MODAL --}}
+    <div x-show="newOrdersModalOpen" class="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-6xl h-[90vh] rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5 overflow-hidden flex flex-col" @click.away="newOrdersModalOpen = false">
+            
+            <div class="p-5 flex flex-col lg:flex-row justify-between items-center bg-[#0f172a] border-b border-white/5 shrink-0 gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center border border-rose-500/20">
+                        <x-heroicon-o-bell class="w-5 h-5 text-rose-500" />
+                    </div>
+                    <div>
+                        <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Manajemen Order</h3>
+                        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Pantau & proses pesanan pelanggan</p>
+                    </div>
+                </div>
+
+                <div class="flex bg-black/30 p-1 rounded-xl border border-white/5">
+                    @foreach(['new' => ['Baru', 'bg-rose-600'], 'processing' => ['Proses', 'bg-sky-600'], 'ready' => ['Siap', 'bg-emerald-600']] as $tab => $config)
+                        <button wire:click="$set('activeTab', '{{ $tab }}')" class="px-5 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all flex items-center gap-2 {{ $activeTab === $tab ? $config[1] . ' text-white shadow-sm' : 'text-gray-500 hover:text-white hover:bg-white/5' }}">
+                            {{ $config[0] }}
+                            @php $count = $this->{$tab . 'OrdersCount'} ?? 0; @endphp
+                            @if($count > 0) 
+                                <span class="bg-white/20 px-1.5 py-0.5 rounded text-[8px] font-black">{{ $count }}</span> 
+                            @endif
+                        </button>
+                    @endforeach
+                </div>
+
+                <button @click="newOrdersModalOpen = false" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                    <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 custom-scrollbar bg-[#0f172a]">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    @forelse($this->orders_by_tab as $order)
+                        @php
+                            $cardBg = $activeTab === 'new' ? 'bg-gradient-to-br from-rose-800 to-rose-900 border-rose-700' : ($activeTab === 'processing' ? 'bg-gradient-to-br from-blue-800 to-blue-900 border-blue-700' : 'bg-gradient-to-br from-emerald-800 to-emerald-900 border-emerald-700');
+                            $badgeBg = $activeTab === 'new' ? 'bg-rose-950 border border-rose-800 text-rose-200' : ($activeTab === 'processing' ? 'bg-blue-950 border border-blue-800 text-blue-200' : 'bg-emerald-950 border border-emerald-800 text-emerald-200');
+                            $badgeText = $activeTab === 'new' ? 'text-rose-200' : ($activeTab === 'processing' ? 'text-blue-200' : 'text-emerald-200');
+                        @endphp
+                        <div class="{{ $cardBg }} p-4 rounded-2xl hover:border-white/50 transition-all flex flex-col justify-between group shadow-md hover:shadow-lg h-[150px] relative overflow-hidden">
+                            <div class="absolute -right-4 -top-4 w-16 h-16 rounded-full blur-2xl opacity-20 {{ $activeTab === 'new' ? 'bg-rose-500' : ($activeTab === 'processing' ? 'bg-sky-500' : 'bg-emerald-400') }}"></div>
+                            
+                            <div>
+                                <div class="flex justify-between items-start mb-3 relative z-10">
+                                    <div class="flex flex-col">
+                                        <div class="text-[14px] font-black text-white tracking-tight leading-none mb-1.5">#{{ $order->id }}</div>
+                                        <span class="text-[9px] font-bold {{ $badgeText }} uppercase tracking-widest">{{ $order->created_at->diffForHumans() }}</span>
+                                    </div>
+                                    <div class="text-right flex flex-col items-end">
+                                        <div class="text-[13px] font-black text-white tracking-tight leading-none mb-1.5">Rp{{ number_format($order->grand_total, 0, ',', '.') }}</div>
+                                        <div class="px-2 py-0.5 {{ $badgeBg }} rounded text-[8px] font-black uppercase tracking-widest">{{ strtoupper($order->payment_method) }}</div>
+                                    </div>
+                                </div>
+                                <div class="mt-2 line-clamp-1 relative z-10 w-full overflow-hidden">
+                                    <span class="text-[11px] font-bold text-white truncate w-full inline-block pr-6">{{ $order->items->first()->product->name ?? 'Produk' }}</span>
+                                    @if($order->items->count() > 1)
+                                        <span class="absolute right-0 top-0 {{ $badgeBg }} px-1 py-0.5 rounded text-[8px] font-black">+{{ $order->items->count() - 1 }}</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="flex gap-2 w-full mt-auto relative z-10">
+                                @php
+                                    $action = $activeTab === 'new' ? 'process' : ($activeTab === 'processing' ? 'ready' : 'complete');
+                                    $label = $activeTab === 'new' ? 'PROSES' : ($activeTab === 'processing' ? 'SIAP' : 'SELESAIKAN');
+                                    $colorBtn = $activeTab === 'new' ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-sm border-rose-400' : ($activeTab === 'processing' ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sm border-sky-400' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm border-emerald-400');
+                                    $btnDetail = $activeTab === 'new' ? 'bg-rose-700 hover:bg-rose-600 border-rose-500 text-white' : ($activeTab === 'processing' ? 'bg-blue-700 hover:bg-blue-600 border-blue-500 text-white' : 'bg-emerald-700 hover:bg-emerald-600 border-emerald-500 text-white');
+                                @endphp
+                                <button wire:click="processOrder({{ $order->id }}, '{{ $action }}')" class="flex-1 h-8 {{ $colorBtn }} font-black rounded-xl transition-all text-[9px] uppercase tracking-widest active:scale-95 flex items-center justify-center border">
+                                    <span class="truncate px-1">{{ $label }}</span>
+                                </button>
+                                <button wire:click="loadOrderDetail({{ $order->id }})" class="w-10 h-8 shrink-0 {{ $btnDetail }} rounded-xl flex items-center justify-center transition-all border shadow-sm active:scale-95">
+                                    <x-heroicon-o-eye class="w-4 h-4"/>
+                                </button>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="col-span-full py-24 text-center flex flex-col items-center gap-4 text-gray-700">
+                            <x-heroicon-o-inbox class="w-10 h-10 opacity-10" />
+                            <p class="font-black uppercase tracking-widest text-[10px]">Tidak ada pesanan {{ $activeTab }}</p>
+                        </div>
+                    @endforelse
+                </div>
+            </div>
         </div>
     </div>
 
     {{-- ORDER DETAIL MODAL --}}
-    <div x-show="orderDetailModalOpen" 
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0"
-        x-transition:enter-end="opacity-100"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100"
-        x-transition:leave-end="opacity-0"
-        style="display: none;">
-        
-        <div class="bg-[#1e293b] w-full max-w-2xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden border border-white/10 flex flex-col"
-             @click.away="orderDetailModalOpen = false">
-             
-             {{-- Modal Header --}}
-             <div class="bg-indigo-600 px-6 py-4 flex items-center justify-between shrink-0">
-                 <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                     <x-heroicon-o-document-text class="w-6 h-6 text-white" />
-                     Detail Pesanan #{{ $this->selectedOrder?->id }}
-                 </h3>
-                 <button @click="orderDetailModalOpen = false" class="text-white/80 hover:text-white">
-                     <x-heroicon-o-x-mark class="w-6 h-6" />
-                 </button>
-             </div>
-
-             {{-- Modal Body --}}
-             <div class="p-6 overflow-y-auto custom-scrollbar flex-1 bg-[#0f172a] space-y-6">
-                 @if($this->selectedOrder)
-                    {{-- Customer Info --}}
-                    <div class="bg-[#1e293b] rounded-xl p-4 border border-white/5 space-y-2">
-                        <h4 class="text-indigo-400 font-bold uppercase tracking-wider text-xs mb-2">Informasi Pelanggan</h4>
-                        <div class="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span class="text-gray-400 block text-xs">Nama</span>
-                                <span class="text-white font-semibold">{{ $this->selectedOrder->customer_name }}</span>
+    {{-- ORDER DETAIL MODAL --}}
+    <div x-show="orderDetailModalOpen" class="fixed inset-0 z-[140] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="bg-[#1e293b] w-full max-w-2xl rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/5 overflow-hidden flex flex-col max-h-[90vh]" @click.away="orderDetailModalOpen = false">
+            @if($selectedOrder)
+                <div class="p-5 flex justify-between items-center bg-[#0f172a] border-b border-white/5 shrink-0">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/5 shadow-inner">
+                            <span class="text-gray-400 font-black text-[10px]">#{{ $selectedOrder->id }}</span>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Detail Transaksi</h3>
+                            <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ $selectedOrder->created_at->format('d M Y • H:i') }}</p>
+                        </div>
+                    </div>
+                    <button @click="orderDetailModalOpen = false" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                        <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                    </button>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6 bg-[#1e293b]">
+                    {{-- Summary Bar --}}
+                    <div class="grid grid-cols-2 gap-3 bg-black/20 p-4 rounded-xl border border-white/5">
+                        <div>
+                            <span class="text-[8px] font-black text-gray-500 uppercase tracking-widest">Metode Bayar</span>
+                            <div class="text-sm font-black text-white flex items-center gap-2 uppercase tracking-tight mt-0.5">
+                                <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                {{ $selectedOrder->payment_method }}
                             </div>
-                            <div>
-                                <span class="text-gray-400 block text-xs">Telepon</span>
-                                <span class="text-white font-semibold">{{ $this->selectedOrder->customer_phone ?? '-' }}</span>
-                            </div>
-                            <div class="col-span-2 flex justify-between items-center">
-                                <div>
-                                    <span class="text-gray-400 block text-xs">Alamat / Catatan</span>
-                                    <span class="text-white">{{ $this->selectedOrder->notes ?? '-' }}</span> 
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-gray-400 block text-xs mb-1">Status Pembayaran</span>
-                                    @if($this->selectedOrder->payment_status === 'paid')
-                                        <span class="text-xs font-bold bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded border border-emerald-500/20">LUNAS</span>
-                                    @else
-                                        <button wire:click="processOrder({{ $this->selectedOrder->id }}, 'mark_paid')" 
-                                            class="text-xs font-bold bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors cursor-pointer animate-pulse">
-                                            BELUM LUNAS (Klik utk Lunas)
-                                        </button>
-                                    @endif
-                                </div>
-                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[8px] font-black text-gray-500 uppercase tracking-widest">Status Pembayaran</span>
+                            <div class="text-emerald-400 font-black text-sm uppercase tracking-widest mt-0.5">{{ strtoupper($selectedOrder->payment_status) }}</div>
                         </div>
                     </div>
 
-                    {{-- Order Items --}}
-                    <div class="bg-[#1e293b] rounded-xl overflow-hidden border border-white/5">
-                        <table class="w-full text-sm text-left">
-                            <thead class="bg-black/20 text-gray-400 uppercase text-xs">
-                                <tr>
-                                    <th class="px-4 py-3">Produk</th>
-                                    <th class="px-4 py-3 text-center">Qty</th>
-                                    <th class="px-4 py-3 text-right">Harga</th>
-                                    <th class="px-4 py-3 text-right">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-white/5">
-                                @foreach($this->selectedOrder->items as $item)
-                                    <tr>
-                                        <td class="px-4 py-3 text-white">
-                                            <div class="font-medium">{{ $item->product->name }}</div>
-                                        </td>
-                                        <td class="px-4 py-3 text-center text-white">{{ $item->quantity }}</td>
-                                        <td class="px-4 py-3 text-right text-gray-300">Rp {{ number_format($item->unit_amount, 0, ',', '.') }}</td>
-                                        <td class="px-4 py-3 text-right text-white font-bold">Rp {{ number_format($item->total_amount, 0, ',', '.') }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot class="bg-black/20 font-bold text-white">
-                                <tr>
-                                    <td colspan="3" class="px-4 py-3 text-right text-gray-400">Total Belanja</td>
-                                    <td class="px-4 py-3 text-right text-lg">Rp {{ number_format($this->selectedOrder->grand_total ?? 0, 0, ',', '.') }}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                    {{-- Items List --}}
+                    <div class="space-y-3">
+                        <h4 class="text-[9px] font-black text-gray-500 uppercase tracking-widest px-1">Daftar Belanja</h4>
+                        <div class="bg-black/20 rounded-2xl border border-white/5 divide-y divide-white/5 overflow-hidden">
+                            @foreach($selectedOrder->items as $item)
+                                <div class="flex items-center gap-4 p-4 transition-all hover:bg-white/[0.02]">
+                                    <div class="w-10 h-10 bg-[#0f172a] rounded-lg flex items-center justify-center font-black text-white shrink-0 border border-white/5 text-[10px]">
+                                        {{ $item->quantity }}x
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-xs font-bold text-white truncate line-clamp-1">{{ $item->product->name }}</div>
+                                        <div class="text-[9px] text-gray-500 font-black uppercase tracking-widest mt-0.5">@ {{ number_format($item->unit_amount, 0, ',', '.') }}</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xs font-black text-white tabular-nums">Rp {{ number_format($item->total_amount, 0, ',', '.') }}</div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
-                @else
-                    <div class="text-center text-gray-500 py-10">Memuat data...</div>
-                @endif
-             </div>
 
-             {{-- Modal Footer Actions --}}
-             <div class="p-4 bg-[#1e293b] border-t border-white/5 flex gap-3">
-                  @if($this->selectedOrder)
-                     @if($this->selectedOrder->status === 'new')
-                        <button wire:click="processOrder({{ $this->selectedOrder->id }}, 'process')"
-                            wire:loading.attr="disabled"
-                            class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-wait text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
-                            <x-heroicon-o-arrow-path class="w-5 h-5" wire:loading.remove wire:target="processOrder" />
-                            <span wire:loading.remove wire:target="processOrder">Terima / Proses</span>
-                            <span wire:loading wire:target="processOrder">Memproses...</span>
-                        </button>
-                     @elseif($this->selectedOrder->status === 'processing')
-                        <button wire:click="processOrder({{ $this->selectedOrder->id }}, 'ready')"
-                            wire:loading.attr="disabled"
-                            class="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-wait text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
-                            <x-heroicon-o-check-circle class="w-5 h-5" wire:loading.remove wire:target="processOrder" />
-                            <span wire:loading.remove wire:target="processOrder">Pesanan Siap</span>
-                            <span wire:loading wire:target="processOrder">Memproses...</span>
-                        </button>
-                     @elseif($this->selectedOrder->status === 'ready')
-                        <button wire:click="processOrder({{ $this->selectedOrder->id }}, 'complete')"
-                            wire:loading.attr="disabled"
-                            class="flex-1 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-wait text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
-                            <x-heroicon-o-archive-box-arrow-down class="w-5 h-5" wire:loading.remove wire:target="processOrder" />
-                            <span wire:loading.remove wire:target="processOrder">Selesai / Diambil</span>
-                            <span wire:loading wire:target="processOrder">Memproses...</span>
-                        </button>
-                     @endif
-                    
-                    <button wire:click="processOrder({{ $this->selectedOrder->id }}, 'print')"
-                        wire:loading.attr="disabled"
-                        class="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-50 disabled:cursor-wait text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2">
-                        <x-heroicon-o-printer class="w-5 h-5" wire:loading.remove wire:target="processOrder({{ $this->selectedOrder->id }}, 'print')" />
-                         <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" wire:loading wire:target="processOrder({{ $this->selectedOrder->id }}, 'print')">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span wire:loading.remove wire:target="processOrder({{ $this->selectedOrder->id }}, 'print')">Cetak Struk</span>
-                        <span wire:loading wire:target="processOrder({{ $this->selectedOrder->id }}, 'print')">Mencetak...</span>
+                    {{-- Subtotals --}}
+                    <div class="space-y-3 bg-[#0f172a] p-5 rounded-2xl border border-white/5 shadow-sm">
+                        <div class="flex justify-between items-center text-gray-400 font-bold text-xs">
+                            <span class="uppercase tracking-widest text-[9px]">Subtotal</span>
+                            <span class="tabular-nums">Rp {{ number_format($selectedOrder->grand_total + $selectedOrder->discount_amount, 0, ',', '.') }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-rose-500 font-bold text-xs">
+                            <span class="uppercase tracking-widest text-[9px]">Diskon / Promo @if($selectedOrder->voucher_code) ({{ $selectedOrder->voucher_code }}) @endif</span>
+                            <span class="tabular-nums">- Rp {{ number_format($selectedOrder->discount_amount, 0, ',', '.') }}</span>
+                        </div>
+                        <div class="pt-4 border-t border-white/10 flex justify-between items-end">
+                            <div class="flex flex-col">
+                                <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-0.5">Total Bayar</span>
+                                <span class="text-gray-600 font-black text-[8px] uppercase tracking-[0.2em]">{{ $selectedOrder->payment_method }}</span>
+                            </div>
+                            <span class="text-2xl font-black text-emerald-500 tabular-nums tracking-tight">Rp {{ number_format($selectedOrder->grand_total, 0, ',', '.') }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-5 bg-[#0f172a] border-t border-white/5 flex gap-3 shrink-0">
+                    <button @click="$dispatch('print-receipt', { orderId: {{ $selectedOrder->id }} })" class="flex-1 h-12 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 group shadow-sm">
+                        <x-heroicon-o-printer class="w-4 h-4 text-gray-400 group-hover:text-white"/> CETAK STRUK
                     </button>
-                 @endif
-             </div>
+                    @if($selectedOrder->status !== 'delivered')
+                        @php
+                           $btnLabel = $selectedOrder->status === 'new' ? 'PROSES' : ($selectedOrder->status === 'processing' ? 'SIAP' : 'SELESAIKAN');
+                           $nextStatus = $selectedOrder->status === 'new' ? 'process' : ($selectedOrder->status === 'processing' ? 'ready' : 'complete');
+                           $btnColor = $selectedOrder->status === 'new' ? 'bg-rose-600 hover:bg-rose-500' : ($selectedOrder->status === 'processing' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-emerald-600 hover:bg-emerald-500');
+                        @endphp
+                        <button wire:click="processOrder({{ $selectedOrder->id }}, '{{ $nextStatus }}')" class="flex-1 h-12 {{ $btnColor }} rounded-xl text-white font-black text-[9px] uppercase tracking-widest transition-all shadow-lg shadow-black/20 active:scale-95">
+                            {{ $btnLabel }}
+                        </button>
+                    @endif
+                </div>
+            @endif
         </div>
     </div>
 
-    {{-- Script --}}
+    {{-- VOUCHER CATALOG MODAL --}}
+    <div x-show="showVoucherCatalog" class="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 p-4" x-cloak x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" @close-modals.window="$wire.set('showVoucherCatalog', false)">
+        <div class="bg-[#1e293b] w-full max-w-lg rounded-[2rem] shadow-[0_20px_60px_rgba(16,185,129,0.1)] border border-emerald-500/10 overflow-hidden flex flex-col max-h-[70vh]" @click.away="$wire.set('showVoucherCatalog', false)">
+            <div class="p-5 flex justify-between items-center bg-[#0f172a] border-b border-white/5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
+                        <x-heroicon-o-ticket class="w-5 h-5 text-emerald-500" />
+                    </div>
+                    <div>
+                        <h3 class="font-black text-lg uppercase tracking-tight text-white leading-tight">Promo Spesial</h3>
+                        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Pilih voucher belanja</p>
+                    </div>
+                </div>
+                <button @click="$wire.set('showVoucherCatalog', false)" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all group">
+                    <x-heroicon-o-x-mark class="w-5 h-5 text-gray-500 group-hover:text-white transition-colors"/>
+                </button>
+            </div>
+            <div class="p-6 space-y-3 overflow-y-auto custom-scrollbar bg-[#1e293b] flex-1">
+                @forelse($this->available_vouchers as $v)
+                    <div wire:click="selectVoucher('{{ $v->code }}')" class="group relative bg-[#0f172a] p-4 rounded-2xl border border-white/5 hover:border-emerald-500/50 transition-all cursor-pointer active:scale-95 flex items-center justify-between shadow-sm overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 bg-emerald-500/10 rounded-xl flex flex-col items-center justify-center border border-emerald-500/20 group-hover:bg-emerald-500 transition-all shadow-inner">
+                                <span class="text-emerald-500 font-black text-sm tracking-tighter group-hover:text-white">{{ $v->type === 'percent' ? $v->amount . '%' : 'Rp' }}</span>
+                            </div>
+                            <div>
+                                <div class="text-base font-black text-white group-hover:text-emerald-400 transition-colors tracking-tight">{{ $v->code }}</div>
+                                <div class="text-[8px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{{ $v->type === 'percent' ? 'Diskon Persentase' : 'Potongan ' . number_format($v->amount, 0, ',', '.') }}</div>
+                            </div>
+                        </div>
+                        <div class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-emerald-500/20 transition-all relative z-10">
+                            <x-heroicon-o-chevron-right class="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors" />
+                        </div>
+                    </div>
+                @empty
+                    <div class="py-16 text-center flex flex-col items-center gap-4 text-gray-700">
+                        <x-heroicon-o-ticket class="w-8 h-8 opacity-10" />
+                        <p class="font-black uppercase tracking-widest text-[9px]">Belum ada voucher aktif</p>
+                    </div>
+                @endforelse
+            </div>
+            <div class="p-4 bg-[#0f172a] border-t border-white/5 text-center">
+                <p class="text-[8px] font-black text-gray-700 uppercase tracking-widest">Ketuk voucher untuk menggunakan</p>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Global Error Handler for Debugging
-        window.onerror = function(msg, url, line, col, error) {
-            console.error("System Error: " + msg + "\nIn: " + url + ":" + line);
-            return false;
-        };
-
         document.addEventListener('livewire:initialized', () => {
-            // Hotkeys
-            document.addEventListener('keydown', (e) => {
-                if(e.key === 'F' || e.key === 'f') {
-                    if(document.activeElement.tagName !== 'INPUT') {
-                        e.preventDefault();
-                        document.getElementById('search-input').focus();
-                    }
-                }
-                if(e.key === 'Enter') {
-                    if(@this.cart.length > 0 && @this.receivedAmount >= @this.total) {
-                        // Enter key behavior depends on modal state
-                        if(this.paymentModalOpen) {
-                             @this.checkout();
-                        } else {
-                            this.paymentModalOpen = true;
-                        }
-                    }
-                }
-            });
-
-            // Sounds & Events
             @this.on('play-sound', (event) => {
                  const status = event.status || (event[0] ? event[0].status : null);
-                 if(status === 'success') {
-                     const beep = document.getElementById('beep-sound');
-                     beep.currentTime = 0; beep.play().catch(e=>{});
-                 } else if (status === 'checkout') {
-                     const cash = document.getElementById('cash-sound');
-                     cash.currentTime = 0; cash.play().catch(e=>{});
-                 }
+                 if(status === 'success') document.getElementById('beep-sound').play().catch(e=>{});
+                 else if (status === 'checkout') document.getElementById('cash-sound').play().catch(e=>{});
             });
-
-            // Print
             @this.on('print-receipt', (event) => {
                 const id = Array.isArray(event) ? event[0].orderId : event.orderId;
-                if(id) {
-                     // Update alpine data for the success modal print button
-                    // document.querySelector('[x-data]').__x.$data.orderId = id; // Handled by event now
-
-                    const url = `/admin/pos/print/${id}`;
-                    const win = window.open(url, 'Print Invoice', 'height=600,width=400');
-                    if(win) {
-                        win.focus();
-                    } else {
-                        alert('Pop-up terblokir! Mohon izinkan pop-up untuk mencetak struk.');
-                    }
-                }
+                if(id) window.open(`/admin/pos/print/${id}`, '_blank', 'height=600,width=400');
+            });
+            @this.on('print-settlement', (event) => {
+                const id = Array.isArray(event) ? event[0].settlementId : event.settlementId;
+                if(id) window.open(`/admin/pos/settlement/print/${id}`, '_blank', 'height=600,width=400');
             });
         });
     </script>
     
     <style>
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
-
-        @keyframes scaleIn {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-        }
-        .animate-scaleIn { animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out both; }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .animate-scaleIn { animation: scaleIn 0.2s ease-out; }
     </style>
 </div>

@@ -3,8 +3,8 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Order;
-use Filament\Widgets\Widget;
 use Carbon\Carbon;
+use Filament\Widgets\Widget;
 
 class SalesCalendarWidget extends Widget
 {
@@ -12,13 +12,18 @@ class SalesCalendarWidget extends Widget
 
     protected static ?int $sort = 0;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     protected static bool $isLazy = false;
 
+    protected ?string $pollingInterval = '15s';
+
     public ?string $selectedDate = null;
+
     public ?string $selectedMonth = null;
+
     public ?string $selectedYear = null;
+
     public string $viewMode = 'daily'; // daily, monthly, yearly
 
     public function mount(): void
@@ -48,7 +53,7 @@ class SalesCalendarWidget extends Widget
 
             case 'monthly':
                 if ($this->selectedMonth) {
-                    $date = Carbon::parse($this->selectedMonth . '-01');
+                    $date = Carbon::parse($this->selectedMonth.'-01');
                     $query = Order::whereMonth('created_at', $date->month)
                         ->whereYear('created_at', $date->year)
                         ->where('payment_status', 'paid');
@@ -64,7 +69,7 @@ class SalesCalendarWidget extends Widget
                         ->where('payment_status', 'paid');
                     $sales = $query->sum('grand_total');
                     $orders = $query->count();
-                    $label = 'Tahun ' . $this->selectedYear;
+                    $label = 'Tahun '.$this->selectedYear;
                 }
                 break;
         }
@@ -88,6 +93,7 @@ class SalesCalendarWidget extends Widget
         for ($i = $currentYear; $i >= $currentYear - 5; $i--) {
             $years[$i] = $i;
         }
+
         return $years;
     }
 }

@@ -17,7 +17,13 @@
             <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
                 <div class="px-6 py-4 bg-gradient-to-r from-rose-500 to-purple-600">
                     <div class="flex justify-between items-center text-white">
-                        <h3 class="text-lg font-bold">Pesanan #{{ $order->id }}</h3>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-lg font-bold">Pesanan #{{ $order->id }}</h3>
+                            <button @click="navigator.clipboard.writeText('{{ $order->id }}'); $dispatch('toast', { message: 'ID Pesanan disalin!', type: 'success' })" 
+                                    class="p-1 hover:bg-white/20 rounded transition" title="Salin ID Pesanan">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                            </button>
+                        </div>
                         <span class="px-3 py-1 bg-white/20 rounded-full text-sm font-medium backdrop-blur-sm">{{ ucfirst($order->status) }}</span>
                     </div>
                 </div>
@@ -30,8 +36,9 @@
                         </div>
                         <div>
                             <p class="text-gray-500">Status Pembayaran</p>
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $order->payment_status == 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800' }}">
-                                {{ ucfirst($order->payment_status) }}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                {{ in_array($order->payment_status, ['pending', 'waiting_dp']) ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800' }}">
+                                {{ $order->payment_status == 'waiting_dp' ? 'Menunggu DP' : ucfirst($order->payment_status) }}
                             </span>
                         </div>
                     </div>
@@ -46,7 +53,7 @@
             </div>
 
             <!-- Payment Instructions -->
-            @if(in_array($order->payment_method, ['bank_transfer', 'e_wallet']) && $order->payment_status !== 'paid')
+            @if((in_array($order->payment_method, ['bank_transfer', 'e_wallet']) && $order->payment_status !== 'paid') || ($order->payment_method === 'cash_on_delivery' && $order->payment_status === 'waiting_dp'))
             <div class="mt-8 bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
                 <div class="flex items-start">
                     <div class="flex-shrink-0">
@@ -57,9 +64,14 @@
                     <div class="ml-3 w-full">
                         <h3 class="text-lg font-medium text-yellow-900">Instruksi Pembayaran</h3>
                         <div class="mt-2 text-sm text-yellow-800">
+                            @if($order->payment_method === 'cash_on_delivery')
+                            <p class="mb-2 font-bold text-orange-700">PENTING: Konfirmasi Uang Muka (DP) Pesanan COD</p>
+                            <p class="mb-4">Untuk mencegah pembatalan sepihak, pesanan COD wajib melakukan DP sebesar <span class="font-bold text-rose-600 text-lg">IDR 10.000</span> ke rekening di bawah ini.</p>
+                            @else
                             <p class="mb-2">Silakan selesaikan pembayaran untuk memproses pesanan Anda.</p>
+                            @endif
                             
-                            @if($order->payment_method == 'bank_transfer')
+                            @if(in_array($order->payment_method, ['bank_transfer', 'cash_on_delivery']))
                             <div class="bg-white p-4 rounded-xl border border-yellow-200 mt-3">
                                 <p class="text-gray-500 text-xs uppercase tracking-wide font-semibold">Bank BCA</p>
                                 <div class="flex justify-between items-center mt-1">
@@ -68,15 +80,9 @@
                                 </div>
                                 <p class="text-gray-600 text-sm mt-1">a.n. MUHAMMAD AFANSYAH</p>
                             </div>
-                            <div class="bg-white p-4 rounded-xl border border-yellow-200 mt-3">
-                                <p class="text-gray-500 text-xs uppercase tracking-wide font-semibold">Bank Mandiri</p>
-                                <div class="flex justify-between items-center mt-1">
-                                    <p class="text-xl font-mono font-bold text-gray-900">700011875460</p>
-                                    <button onclick="navigator.clipboard.writeText('700011875460')" class="text-rose-600 text-sm font-medium hover:text-rose-700">Salin</button>
-                                </div>
-                                <p class="text-gray-600 text-sm mt-1">a.n. NAILA AZ ZAHRA</p>
-                            </div>
-                            @elseif($order->payment_method == 'e_wallet')
+                            @endif
+
+                            @if($order->payment_method == 'e_wallet')
                             <div class="bg-white p-4 rounded-xl border border-yellow-200 mt-3">
                                 <p class="text-gray-500 text-xs uppercase tracking-wide font-semibold">GoPay / OVO / DANA</p>
                                 <div class="flex justify-between items-center mt-1">
@@ -87,12 +93,15 @@
                             </div>
                             @endif
 
-                            <div class="mt-4 p-3 bg-yellow-100 rounded-lg">
-                                <p class="font-medium">Total yang harus ditransfer:</p>
-                                <p class="text-2xl font-bold text-rose-600">IDR {{ number_format($order->grand_total, 0, ',', '.') }}</p>
+                            <div class="mt-4 p-3 bg-white border-2 border-dashed border-yellow-300 rounded-lg">
+                                <p class="font-medium">Total yang harus dibayarkan @if($order->payment_method === 'cash_on_delivery') (DP) @endif:</p>
+                                <p class="text-2xl font-bold text-rose-600">IDR {{ $order->payment_method === 'cash_on_delivery' ? '10.000' : number_format($order->grand_total, 0, ',', '.') }}</p>
+                                @if($order->payment_method === 'cash_on_delivery')
+                                <p class="text-xs text-gray-500 italic mt-1">*Sisa pembayaran sebesar IDR {{ number_format($order->grand_total - 10000, 0, ',', '.') }} dibayarkan saat barang sampai.</p>
+                                @endif
                             </div>
                             
-                            <p class="mt-4">Setelah transfer, mohon kirimkan bukti transfer ke WhatsApp admin kami di <a href="https://wa.me/6289601905406?text=Konfirmasi%20Pesanan%20%23{{ $order->id }}" target="_blank" class="font-bold underline text-green-700">0896 0190 5406</a> dengan menyertakan ID Pesanan Anda.</p>
+                            <p class="mt-4">Setelah transfer, mohon kirimkan bukti transfer ke WhatsApp admin kami di <a href="https://wa.me/6289601905406?text=Konfirmasi%20Pesanan%20%23{{ $order->id }}%20({{ $order->payment_method === 'cash_on_delivery' ? 'DP%20COD' : 'Lunas' }})" target="_blank" class="font-bold underline text-green-700">0896 0190 5406</a> dengan menyertakan ID Pesanan Anda.</p>
                         </div>
                     </div>
                 </div>

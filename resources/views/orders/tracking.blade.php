@@ -32,6 +32,31 @@
                     <form action="{{ route('orders.track') }}" method="POST" class="space-y-6">
                         @csrf
                         
+                        <!-- Order ID Input -->
+                        <div>
+                            <label for="order_id" class="block text-sm font-medium text-gray-700 mb-2">
+                                ID Pesanan (Opsional)
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+                                    </svg>
+                                </div>
+                                <input 
+                                    type="text" 
+                                    name="order_id" 
+                                    id="order_id" 
+                                    placeholder="Contoh: 12345"
+                                    value="{{ old('order_id') }}"
+                                    class="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all duration-200"
+                                >
+                            </div>
+                            @error('order_id')
+                                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
                         <!-- Email Input -->
                         <div>
                             <label for="email" class="block text-sm font-medium text-gray-700 mb-2">

@@ -9,7 +9,7 @@
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #f43f5e 0%, #a855f7 100%); border-radius: 16px 16px 0 0; padding: 30px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">🛍️ {{ config('app.name') }}</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">{{ config('app.name') }}</h1>
             <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Terima kasih atas pesanan Anda!</p>
         </div>
 
@@ -23,11 +23,13 @@
                 </div>
                 <h2 style="color: #1f2937; margin: 15px 0 5px 0;">Pembayaran Berhasil!</h2>
                 <p style="color: #6b7280; margin: 0;">Pesanan Anda sedang diproses dan akan segera dikirim.</p>
-                @elseif($order->payment_status == 'pending')
-                <div style="display: inline-block; background: #f59e0b; border-radius: 50%; padding: 15px;">
+                @elseif($order->payment_status == 'pending' || $order->payment_status == 'waiting_dp')
+                <div style="display: inline-block; background: #3b82f6; border-radius: 50%; padding: 15px;">
                     <span style="font-size: 30px; color: white;">!</span>
                 </div>
-                <h2 style="color: #1f2937; margin: 15px 0 5px 0;">Menunggu Pembayaran</h2>
+                <h2 style="color: #1f2937; margin: 15px 0 5px 0;">
+                    {{ $order->payment_status == 'waiting_dp' ? 'Menunggu DP' : 'Menunggu Pembayaran' }}
+                </h2>
                 <p style="color: #6b7280; margin: 0;">Silakan selesaikan pembayaran agar pesanan dapat diproses.</p>
                 @else
                 <div style="display: inline-block; background: #ef4444; border-radius: 50%; padding: 15px;">
@@ -40,7 +42,7 @@
             <!-- Payment Instructions (Only for Pending Bank Transfer/E-Wallet) -->
             @if($order->payment_status == 'pending' && in_array($order->payment_method, ['bank_transfer', 'e_wallet']))
             <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 20px; margin-bottom: 25px; text-align: left;">
-                <h3 style="color: #92400e; margin-top: 0; margin-bottom: 15px; font-size: 18px;">💳 Instruksi Pembayaran</h3>
+                <h3 style="color: #92400e; margin-top: 0; margin-bottom: 15px; font-size: 18px;">Instruksi Pembayaran</h3>
                 <p style="color: #b45309; margin-bottom: 15px; font-size: 14px;">Silakan transfer sejumlah <strong style="font-size: 16px;">Rp {{ number_format($order->grand_total, 0, ',', '.') }}</strong> ke salah satu rekening berikut:</p>
                 
                 @if($order->payment_method == 'bank_transfer')
@@ -87,7 +89,11 @@
                     <tr>
                         <td style="padding: 8px 0; color: #6b7280;">Status</td>
                         <td style="padding: 8px 0; text-align: right;">
-                            <span style="background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                            <span style="background: 
+                                @if($order->payment_status == 'paid') #10b981;
+                                @elseif($order->payment_status == 'pending' || $order->payment_status == 'waiting_dp') #3b82f6;
+                                @else #ef4444; @endif
+                                color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
                                 {{ __('order.payment_status.' . $order->payment_status) }}
                             </span>
                         </td>
@@ -96,7 +102,7 @@
             </div>
 
             <!-- Order Items -->
-            <h3 style="color: #1f2937; margin-bottom: 15px; font-size: 16px;">📦 Detail Pesanan</h3>
+            <h3 style="color: #1f2937; margin-bottom: 15px; font-size: 16px;">Detail Pesanan</h3>
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <thead>
                     <tr style="background: #f1f5f9;">
@@ -120,14 +126,6 @@
             <div style="background: linear-gradient(135deg, #fdf2f8 0%, #faf5ff 100%); border-radius: 12px; padding: 20px;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
-                        <td style="padding: 5px 0; color: #6b7280;">Subtotal</td>
-                        <td style="padding: 5px 0; text-align: right; color: #1f2937;">Rp {{ number_format($order->grand_total - $order->shipping_amount, 0, ',', '.') }}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 5px 0; color: #6b7280;">Ongkos Kirim</td>
-                        <td style="padding: 5px 0; text-align: right; color: #1f2937;">Rp {{ number_format($order->shipping_amount, 0, ',', '.') }}</td>
-                    </tr>
-                    <tr>
                         <td style="padding: 10px 0 0 0; font-weight: 700; font-size: 18px; color: #1f2937;">Total</td>
                         <td style="padding: 10px 0 0 0; text-align: right; font-weight: 700; font-size: 18px; background: linear-gradient(135deg, #f43f5e 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
                             Rp {{ number_format($order->grand_total, 0, ',', '.') }}
@@ -138,7 +136,7 @@
 
             <!-- Customer Info -->
             <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
-                <h3 style="color: #1f2937; margin-bottom: 10px; font-size: 16px;">📍 Informasi Pengiriman</h3>
+                <h3 style="color: #1f2937; margin-bottom: 10px; font-size: 16px;">Informasi Pengiriman</h3>
                 <p style="color: #64748b; margin: 0; line-height: 1.6;">
                     <strong>{{ $order->customer_name }}</strong><br>
                     {{ $order->customer_email }}<br>

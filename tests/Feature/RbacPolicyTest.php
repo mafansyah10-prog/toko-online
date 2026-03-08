@@ -2,12 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\Product;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RbacPolicyTest extends TestCase
@@ -20,7 +19,7 @@ class RbacPolicyTest extends TestCase
 
         // Seed permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
-        
+
         $permissions = [
             'manage_products',
             'manage_orders',

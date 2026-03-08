@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias([
+            'start.home' => \App\Http\Middleware\MustStartFromHome::class,
+        ]);
         $middleware->validateCsrfTokens(except: [
             'payment/notification',
         ]);

@@ -5,8 +5,10 @@
                 <span class="bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-600">Checkout</span>
             </h1>
 
-            <form action="{{ route('checkout.store') }}" method="POST" class="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16">
+            <form action="{{ route('checkout.store') }}" method="POST" class="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16" x-data="{ submitting: false }" @submit="submitting = true">
                 @csrf
+                <!-- Honeypot -->
+                <input type="text" name="x_honeypot" class="hidden" value="" tabindex="-1" autocomplete="off">
                 
                 <!-- Contact & Shipping Information -->
                 <div class="space-y-8">
@@ -26,10 +28,13 @@
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                     </div>
-                                    <input type="text" id="name" name="name" required 
-                                           class="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="text" id="name" name="name" required maxlength="100" value="{{ old('name') }}"
+                                           class="block w-full pl-10 pr-3 py-3 border @error('name') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="Masukkan nama lengkap Anda">
                                 </div>
+                                @error('name')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
 
                             <div>
@@ -40,10 +45,13 @@
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                         </svg>
                                     </div>
-                                    <input type="email" id="email" name="email" required 
-                                           class="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="email" id="email" name="email" required maxlength="100" value="{{ old('email') }}"
+                                           class="block w-full pl-10 pr-3 py-3 border @error('email') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="your@email.com">
                                 </div>
+                                @error('email')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
 
                             <div>
@@ -54,10 +62,13 @@
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                                         </svg>
                                     </div>
-                                    <input type="tel" id="phone" name="phone" required 
-                                           class="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="tel" id="phone" name="phone" required maxlength="15" value="{{ old('phone') }}"
+                                           class="block w-full pl-10 pr-3 py-3 border @error('phone') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="08xxxxxxxxxx">
                                 </div>
+                                @error('phone')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
                         </div>
                     </div>
@@ -79,25 +90,34 @@
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
                                     </div>
-                                    <input type="text" name="address" id="address" required 
-                                           class="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="text" name="address" id="address" required maxlength="500" value="{{ old('address') }}"
+                                           class="block w-full pl-10 pr-3 py-3 border @error('address') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="Jl. Contoh No. 123">
                                 </div>
+                                @error('address')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
 
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label for="city" class="block text-sm font-medium text-gray-700 mb-1">Kota</label>
-                                    <input type="text" name="city" id="city" required 
-                                           class="block w-full px-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="text" name="city" id="city" required maxlength="100" value="{{ old('city') }}"
+                                           class="block w-full px-3 py-3 border @error('city') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="Jakarta">
+                                    @error('city')
+                                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
 
                                 <div>
                                     <label for="postal_code" class="block text-sm font-medium text-gray-700 mb-1">Kode Pos</label>
-                                    <input type="text" name="postal_code" id="postal_code" required 
-                                           class="block w-full px-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
+                                    <input type="text" name="postal_code" id="postal_code" required maxlength="10" value="{{ old('postal_code') }}"
+                                           class="block w-full px-3 py-3 border @error('postal_code') border-red-500 @else border-gray-200 @enderror rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent transition" 
                                            placeholder="12345">
+                                    @error('postal_code')
+                                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
                         </div>
@@ -158,6 +178,18 @@
                                     <div class="w-3 h-3 rounded-full" :class="selected === 'cash_on_delivery' ? 'bg-rose-500' : ''"></div>
                                 </div>
                             </label>
+
+                            <div x-show="selected === 'cash_on_delivery'" x-transition 
+                                 class="p-4 bg-orange-50 border border-orange-100 rounded-xl text-xs text-orange-800 flex items-start">
+                                <svg class="w-5 h-5 mr-2 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span><strong>Penting:</strong> Untuk metode COD, Anda wajib melakukan konfirmasi uang muka (DP) terlebih dahulu agar pesanan dapat diproses.</span>
+                            </div>
+
+                            @error('payment_method')
+                                <p class="mt-2 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
                     </div>
 
@@ -187,10 +219,12 @@
                                         <div class="flex-shrink-0">
                                             <img src="{{ $details['image'] ? Storage::url($details['image']) : 'https://via.placeholder.com/100' }}" 
                                                  alt="{{ $details['name'] }}" 
+                                                 loading="lazy"
+                                                 decoding="async"
                                                  class="w-16 h-16 rounded-xl object-cover shadow-sm">
                                         </div>
                                         <div class="ml-4 flex-1">
-                                            <h4 class="text-sm font-medium text-gray-900 line-clamp-1">{{ $details['name'] }}</h4>
+                                            <h4 class="text-sm font-medium text-gray-900 line-clamp-2">{{ $details['name'] }}</h4>
                                             <p class="mt-1 text-sm text-gray-500">Qty: {{ $details['quantity'] }}</p>
                                             <p class="mt-1 text-sm font-medium text-gray-900">IDR {{ number_format($details['price'] * $details['quantity'], 0, ',', '.') }}</p>
                                         </div>
@@ -237,7 +271,7 @@
 
                                 <div class="flex items-center justify-between border-t border-gray-200 pt-4">
                                     <dt class="text-base font-bold text-gray-900">Total</dt>
-                                    <dd class="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-600" id="total_display">IDR {{ number_format($total, 0, ',', '.') }}</dd>
+                                    <dd class="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-600 px-0.5" id="total_display">IDR {{ number_format($total, 0, ',', '.') }}</dd>
                                 </div>
                             </dl>
 
@@ -294,11 +328,18 @@
                             </script>
 
                             <div class="mt-6">
-                                <button type="submit" class="w-full bg-gradient-to-r from-rose-500 to-purple-600 border border-transparent rounded-xl shadow-lg py-4 px-4 text-base font-bold text-white hover:shadow-xl hover:scale-[1.02] transform transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 flex justify-center items-center">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <button type="submit" 
+                                        :disabled="submitting"
+                                        :class="{ 'opacity-50 cursor-not-allowed': submitting }"
+                                        class="w-full bg-gradient-to-r from-rose-500 to-purple-600 border border-transparent rounded-xl shadow-lg py-4 px-4 text-base font-bold text-white hover:shadow-xl hover:scale-[1.02] transform transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 flex justify-center items-center">
+                                    <svg x-show="!submitting" class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                     </svg>
-                                    Buat Pesanan
+                                    <svg x-show="submitting" class="animate-spin h-5 w-5 mr-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span x-text="submitting ? 'Memproses Pesanan...' : 'Buat Pesanan'"></span>
                                 </button>
                             </div>
                             

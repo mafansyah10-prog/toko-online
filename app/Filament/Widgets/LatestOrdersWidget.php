@@ -10,12 +10,12 @@ use Filament\Widgets\TableWidget as BaseWidget;
 class LatestOrdersWidget extends BaseWidget
 {
     protected static ?string $heading = 'Pesanan Terbaru';
-    
+
     protected static ?int $sort = 4;
 
     protected static bool $isLazy = false;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table
     {
@@ -26,7 +26,7 @@ class LatestOrdersWidget extends BaseWidget
             ->columns([
                 Tables\Columns\TextColumn::make('id')
                     ->label('Order ID')
-                    ->formatStateUsing(fn ($state) => '#' . $state)
+                    ->formatStateUsing(fn ($state) => '#'.$state)
                     ->searchable(),
                 Tables\Columns\TextColumn::make('customer_name')
                     ->label('Customer')
@@ -34,7 +34,7 @@ class LatestOrdersWidget extends BaseWidget
                     ->searchable(),
                 Tables\Columns\TextColumn::make('grand_total')
                     ->label('Total')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->sortable(),
                 Tables\Columns\TextColumn::make('payment_status')
                     ->label('Pembayaran')

@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use App\Models\User;
 
 class ClearExceptSuperAdminSeeder extends Seeder
 {
@@ -29,7 +29,7 @@ class ClearExceptSuperAdminSeeder extends Seeder
         // Truncate all other tables except users, migrations, sessions, password_reset_tokens
         foreach ($tables as $table) {
             $tableName = $table->$tableKey;
-            if (!in_array($tableName, ['users', 'migrations', 'sessions', 'password_reset_tokens'])) {
+            if (! in_array($tableName, ['users', 'migrations', 'sessions', 'password_reset_tokens'])) {
                 DB::table($tableName)->truncate();
             }
         }

@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\DB;
 class TopProductsWidget extends BaseWidget
 {
     protected static ?string $heading = 'Produk Terlaris';
-    
+
     protected static ?int $sort = 3;
 
     protected static bool $isLazy = false;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table
     {
@@ -51,7 +51,7 @@ class TopProductsWidget extends BaseWidget
                     ->color('success'),
                 Tables\Columns\TextColumn::make('total_revenue')
                     ->label('Total Pendapatan')
-                    ->formatStateUsing(fn ($state) => 'Rp ' . number_format($state, 0, ',', '.'))
+                    ->formatStateUsing(fn ($state) => 'Rp '.number_format($state, 0, ',', '.'))
                     ->sortable(),
             ])
             ->paginated([5, 10, 25, 50, 100, 'all'])

@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class ShopSeeder extends Seeder
 {
@@ -88,7 +87,7 @@ class ShopSeeder extends Seeder
             'is_active' => true,
             'is_featured' => false,
         ]);
-        
+
         $this->command->info('Shop seeded successfully with demo data!');
     }
 }
