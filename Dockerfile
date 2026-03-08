@@ -46,9 +46,6 @@ RUN composer install --optimize-autoloader --no-dev
 RUN npm install
 RUN npm run build
 
-# Configure dynamic port
-RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
-
 # Setup entrypoint script
 COPY docker/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
